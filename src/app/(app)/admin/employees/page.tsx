@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
-import { initials } from "@/lib/format";
+import { Avatar } from "@/components/Avatar";
 import { ROLE_LABEL } from "@/lib/nav";
 import type { Prisma } from "@/generated/prisma/client";
 import { removeFromTeam } from "./actions";
@@ -50,7 +50,7 @@ async function EmployeeList({ q, status }: { q: string; status: "active" | "resi
       : {}),
   };
   const [list, resignedCount] = await Promise.all([
-    prisma.employee.findMany({ where, include: { team: true }, orderBy: { code: "asc" } }),
+    prisma.employee.findMany({ where, include: { team: true, photo: { select: { updatedAt: true } } }, orderBy: { code: "asc" } }),
     prisma.employee.count({ where: { status: "RESIGNED" } }),
   ]);
 
@@ -86,8 +86,13 @@ async function EmployeeList({ q, status }: { q: string; status: "active" | "resi
                 <tr key={e.id}>
                   <td style={{ whiteSpace: "nowrap" }}>{e.code}</td>
                   <td>
-                    <Link href={`/admin/employees/${e.id}`} className="link" style={{ fontWeight: 500 }}>{e.name}</Link>
-                    {e.isCEO && <> <span className="badge ok xs">CEO</span></>}
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <Avatar id={e.id} name={e.name} photoUpdatedAt={e.photo?.updatedAt} size={28} />
+                      <div>
+                        <Link href={`/admin/employees/${e.id}`} className="link" style={{ fontWeight: 500 }}>{e.name}</Link>
+                        {e.isCEO && <> <span className="badge ok xs">CEO</span></>}
+                      </div>
+                    </div>
                   </td>
                   <td>{e.team ? <span className="badge neutral">{e.team.name}</span> : <span className="missing">Chưa chọn</span>}</td>
                   <td>{e.role ? ROLE_LABEL[e.role] : <span className="missing">Chưa chọn</span>}</td>
@@ -122,11 +127,19 @@ async function OrgChart() {
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         leader: { select: { id: true, name: true } },
-        members: { where: { status: "ACTIVE" }, orderBy: { name: "asc" } },
+        members: {
+          where: { status: "ACTIVE" },
+          orderBy: { name: "asc" },
+          include: { photo: { select: { updatedAt: true } } },
+        },
       },
     }),
-    prisma.employee.findFirst({ where: { isCEO: true, status: "ACTIVE" } }),
-    prisma.employee.findMany({ where: { teamId: null, status: "ACTIVE", isCEO: false }, orderBy: { name: "asc" } }),
+    prisma.employee.findFirst({ where: { isCEO: true, status: "ACTIVE" }, include: { photo: { select: { updatedAt: true } } } }),
+    prisma.employee.findMany({
+      where: { teamId: null, status: "ACTIVE", isCEO: false },
+      orderBy: { name: "asc" },
+      include: { photo: { select: { updatedAt: true } } },
+    }),
   ]);
 
   return (
@@ -138,7 +151,7 @@ async function OrgChart() {
       <div style={{ textAlign: "center", margin: "6px 0 4px" }}>
         {ceo ? (
           <Link href={`/admin/employees/${ceo.id}`} className="card" style={{ display: "inline-flex", alignItems: "center", gap: 10, padding: "10px 18px" }}>
-            <div className="avatar" style={{ width: 32, height: 32, fontSize: 12 }}>{initials(ceo.name)}</div>
+            <Avatar id={ceo.id} name={ceo.name} photoUpdatedAt={ceo.photo?.updatedAt} size={32} />
             <div style={{ textAlign: "left" }}>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{ceo.name}</div>
               <div style={{ fontSize: 10.5, color: "var(--text-2)" }}>CEO</div>
@@ -171,7 +184,7 @@ async function OrgChart() {
               {t.members.length === 0 && <div style={{ fontSize: 12, color: "var(--text-3)", padding: "4px 0" }}>Chưa có ai</div>}
               {t.members.map((m) => (
                 <div key={m.id} className="member-row">
-                  <div className="avatar" style={{ width: 24, height: 24, fontSize: 9.5 }}>{initials(m.name)}</div>
+                  <Avatar id={m.id} name={m.name} photoUpdatedAt={m.photo?.updatedAt} size={24} />
                   <Link href={`/admin/employees/${m.id}`}>
                     {m.name}
                     {t.leader?.id === m.id && <> <span className="badge warn xs">Leader</span></>}
@@ -208,7 +221,7 @@ async function OrgChart() {
             <div className="team-body">
               {unassigned.map((m) => (
                 <div key={m.id} className="member-row">
-                  <div className="avatar" style={{ width: 24, height: 24, fontSize: 9.5 }}>{initials(m.name)}</div>
+                  <Avatar id={m.id} name={m.name} photoUpdatedAt={m.photo?.updatedAt} size={24} />
                   <Link href={`/admin/employees/${m.id}`}>
                     {m.name} {m.role ? <span style={{ color: "var(--text-3)", fontSize: 11 }}>· {ROLE_LABEL[m.role]}</span> : null}
                   </Link>

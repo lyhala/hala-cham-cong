@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { logout } from "@/app/actions/auth";
+import { photoUrl } from "@/components/Avatar";
 import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth/session";
 import { ROLE_LABEL } from "@/lib/nav";
@@ -8,7 +9,7 @@ export default async function ProfilePage() {
   const user = await requireUser();
   const me = await prisma.employee.findUniqueOrThrow({
     where: { id: user.id },
-    include: { team: { include: { leader: { select: { name: true } } } } },
+    include: { team: { include: { leader: { select: { name: true } } } }, photo: { select: { updatedAt: true } } },
   });
 
   const rows: [string, React.ReactNode][] = [
@@ -33,9 +34,9 @@ export default async function ProfilePage() {
             display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", fontSize: 11, color: "var(--text-3)", textAlign: "center",
           }}
         >
-          {me.faceImageUrl ? (
+          {me.photo ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={me.faceImageUrl} alt="Ảnh FaceID" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <img src={photoUrl(me.id, me.photo.updatedAt)} alt="Ảnh FaceID" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
           ) : (
             "Chưa có ảnh"
           )}

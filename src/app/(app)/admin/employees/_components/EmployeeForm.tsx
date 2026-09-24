@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { startTransition, useActionState, useRef, useState } from "react";
 import { createEmployee, updateEmployee } from "../actions";
+import { initials } from "@/lib/format";
+import { PhotoUploader } from "./PhotoUploader";
 import { TempPasswordBox } from "./TempPasswordBox";
 
 export type EmployeeFormValues = {
@@ -61,6 +63,15 @@ function EmployeeFormInner({ mode, values, teams, onAddAnother }: Props & { onAd
       <div className="card">
         <div className="ok-box">{state.message}</div>
         <TempPasswordBox password={state.tempPassword} />
+        <div className="section-title">Ảnh FaceID (có thể thêm sau trong hồ sơ)</div>
+        <div style={{ marginBottom: 16 }}>
+          <PhotoUploader
+            employeeId={state.employeeId!}
+            code={state.created?.code ?? ""}
+            photoUrl={null}
+            initials={initials(state.created?.name ?? "?")}
+          />
+        </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Link className="btn primary" href={`/admin/employees/${state.employeeId}`}>Mở hồ sơ</Link>
           <button type="button" className="btn" onClick={() => onAddAnother(state.nextCode ?? "")}>+ Thêm người khác</button>

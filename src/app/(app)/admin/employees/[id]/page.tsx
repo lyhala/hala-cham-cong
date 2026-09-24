@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { todayVN } from "@/lib/dates";
+import { Avatar, photoUrl } from "@/components/Avatar";
 import { fmtDate, fmtMoney, initials, toDateInput } from "@/lib/format";
 import { deleteSalaryHistory } from "../actions";
 import { AccountPanel } from "../_components/AccountPanel";
 import { ActionButton } from "../_components/ActionButton";
 import { EmployeeForm } from "../_components/EmployeeForm";
+import { PhotoUploader } from "../_components/PhotoUploader";
 import { SalaryForm } from "../_components/SalaryForm";
 
 export default async function EmployeeDetailPage(props: PageProps<"/admin/employees/[id]">) {
@@ -20,6 +22,7 @@ export default async function EmployeeDetailPage(props: PageProps<"/admin/employ
       include: {
         team: true,
         leadsTeam: true,
+        photo: { select: { updatedAt: true } },
         salaryHistory: { orderBy: [{ effectiveFrom: "desc" }, { createdAt: "desc" }], include: { createdBy: { select: { name: true } } } },
       },
     }),
@@ -37,7 +40,7 @@ export default async function EmployeeDetailPage(props: PageProps<"/admin/employ
       <Link href="/admin/employees" className="backbar">← Nhân sự</Link>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-        <div className="avatar" style={{ width: 44, height: 44, fontSize: 16 }}>{initials(e.name)}</div>
+        <Avatar id={e.id} name={e.name} photoUpdatedAt={e.photo?.updatedAt} size={44} />
         <div>
           <h1 style={{ marginBottom: 2 }}>{e.name}</h1>
           <div style={{ fontSize: 12, color: "var(--text-2)", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
@@ -57,6 +60,17 @@ export default async function EmployeeDetailPage(props: PageProps<"/admin/employ
         <div className="warn-box">Role là Leader nhưng chưa là Leader của team nào — hãy chọn Team rồi lưu lại.</div>
       )}
 
+      <div className="section-title">Ảnh FaceID</div>
+      <div className="card" style={{ marginBottom: 16 }}>
+        <PhotoUploader
+          employeeId={e.id}
+          code={e.code}
+          photoUrl={e.photo ? photoUrl(e.id, e.photo.updatedAt) : null}
+          initials={initials(e.name)}
+        />
+      </div>
+
+      <div className="section-title">Thông tin</div>
       <EmployeeForm
         mode="edit"
         teams={teams}

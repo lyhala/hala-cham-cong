@@ -131,7 +131,6 @@ model Employee {
 
   // Hanet (§3.1)
   hanetPersonId String? @unique
-  faceImageUrl  String?
 
   // Đăng nhập
   passwordHash       String?
@@ -144,6 +143,7 @@ model Employee {
 
   leadsTeam Team? @relation("TeamLeader")
 
+  photo             EmployeePhoto?
   sessions          Session[]
   salaryHistory     SalaryHistory[]     @relation("SalaryHistoryEmployee")
   salaryHistoryMade SalaryHistory[]     @relation("SalaryHistoryCreatedBy")
@@ -163,6 +163,16 @@ model Employee {
   pushSubscriptions PushSubscription[]
   auditLogs         AuditLog[]
   settingsUpdated   Setting[]
+}
+
+// Ảnh khuôn mặt (dùng cho FaceID Hanet + hiển thị). Lưu thẳng trong DB (đã thu nhỏ, ~100–300KB),
+// chỉ xem được qua /api/employees/[id]/photo sau khi kiểm tra quyền — không có link công khai.
+model EmployeePhoto {
+  employeeId String   @id
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  data       Bytes
+  mimeType   String
+  updatedAt  DateTime @updatedAt
 }
 
 // Phiên đăng nhập. Lưu hash của token (không lưu token gốc) để lộ DB cũng không dùng được.

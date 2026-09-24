@@ -24,6 +24,7 @@ export type ActionState =
       tempPassword?: string;
       employeeId?: string;
       nextCode?: string;
+      created?: { code: string; name: string };
       confirmLeader?: LeaderConflict;
     }
   | undefined;
@@ -130,6 +131,7 @@ export async function createEmployee(_: ActionState, fd: FormData): Promise<Acti
       tempPassword,
       employeeId: created.id,
       nextCode: await suggestNextEmployeeCode(),
+      created: { code: created.code, name: created.name },
       message: `Đã thêm ${created.name}`,
     };
   } catch (e) {
@@ -483,4 +485,72 @@ export async function removeFromTeam(_: ActionState, fd: FormData): Promise<Acti
   });
   refresh();
   return { ok: true };
+}
+
+// ───────────────────────── Ảnh nhân sự ─────────────────────────
+
+const MAX_PHOTO_BYTES = 2.5 * 1024 * 1024;
+
+/** Nhận diện định dạng ảnh qua mấy byte đầu file (không tin phần đuôi tên file). */
+function detectImageType(bytes: Uint8Array): string | null {
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
+  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
+  if (
+    String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" &&
+    String.fromCharCode(...bytes.slice(8, 12)) === "WEBP"
+  ) {
+    return "image/webp";
+  }
+  return null;
+}
+
+export async function uploadPhoto(_: ActionState, fd: FormData): Promise<ActionState> {
+  const admin = await requireRole("ADMIN");
+  const employeeId = String(fd.get("employeeId") ?? "");
+  const file = fd.get("photo");
+  if (!(file instanceof File) || file.size === 0) return { error: "Vui lòng chọn ảnh" };
+  if (file.size > MAX_PHOTO_BYTES) return { error: "Ảnh quá lớn (tối đa 2,5MB sau khi thu nhỏ)" };
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const mimeType = detectImageType(bytes);
+  if (!mimeType) return { error: "File không phải ảnh JPG / PNG / WebP" };
+
+  const e = await prisma.employee.findUnique({ where: { id: employeeId } });
+  if (!e) return { error: "Không tìm thấy nhân sự" };
+
+  await prisma.employeePhoto.upsert({
+    where: { employeeId },
+    update: { data: bytes, mimeType },
+    create: { employeeId, data: bytes, mimeType },
+  });
+  // TODO (module Hanet): tự động gọi API Hanet đăng ký / cập nhật FaceID, MSNV = Mã NV
+  await logAudit({
+    actorId: admin.id,
+    action: "employee.photo_upload",
+    targetType: "Employee",
+    targetId: employeeId,
+    summary: `Cập nhật ảnh FaceID cho ${e.code} - ${e.name}`,
+  });
+  refresh();
+  revalidatePath("/profile");
+  return { ok: true, message: "Đã lưu ảnh" };
+}
+
+export async function deletePhoto(_: ActionState, fd: FormData): Promise<ActionState> {
+  const admin = await requireRole("ADMIN");
+  const employeeId = String(fd.get("employeeId") ?? "");
+  const e = await prisma.employee.findUnique({ where: { id: employeeId } });
+  if (!e) return { error: "Không tìm thấy nhân sự" };
+
+  await prisma.employeePhoto.deleteMany({ where: { employeeId } });
+  await logAudit({
+    actorId: admin.id,
+    action: "employee.photo_delete",
+    targetType: "Employee",
+    targetId: employeeId,
+    summary: `Xóa ảnh FaceID của ${e.code} - ${e.name}`,
+  });
+  refresh();
+  revalidatePath("/profile");
+  return { ok: true, message: "Đã xóa ảnh" };
 }
