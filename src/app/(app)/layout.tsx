@@ -6,11 +6,7 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth/session";
 import { NAV_BY_ROLE, ROLE_LABEL } from "@/lib/nav";
 import { getSetting } from "@/lib/settings-db";
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/);
-  return (parts.at(-1)?.[0] ?? "?").toUpperCase();
-}
+import { initials } from "@/lib/format";
 
 // Khung chung cho mọi trang sau khi đăng nhập: topbar + sidebar (máy tính) + bottom nav (điện thoại).
 export default async function AppLayout({ children }: LayoutProps<"/">) {

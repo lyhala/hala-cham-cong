@@ -470,3 +470,204 @@ td {
 .auth-card .brand span.full {
   display: inline;
 }
+
+/* ---- Bảng, tab, form (theo demo) ---- */
+th {
+  text-align: left;
+  color: var(--text-2);
+  font-weight: 600;
+  padding: 9px 10px;
+  background: var(--navy-soft);
+  font-size: 10.5px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+tbody tr:hover td {
+  background: rgba(18, 40, 63, 0.015);
+}
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+  background: var(--surface);
+}
+.table-wrap tr:first-child td {
+  border-top: 1px solid var(--border);
+}
+.right {
+  text-align: right;
+}
+.btn.sm {
+  padding: 6px 11px;
+  font-size: 12px;
+}
+.btn.primary.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.toolbar input,
+.toolbar select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+}
+.backbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  color: var(--text-2);
+  margin-bottom: 14px;
+  padding: 4px 2px;
+}
+.backbar:hover {
+  color: var(--navy);
+}
+.ok-box {
+  background: var(--success-bg);
+  color: var(--success);
+  border-radius: 9px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  margin-bottom: 12px;
+  line-height: 1.5;
+}
+.missing {
+  color: var(--danger);
+  font-size: 11.5px;
+}
+.field-error input,
+.field-error select {
+  border-color: var(--danger);
+}
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 8px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.check-row input {
+  margin-top: 3px;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.check-row small {
+  display: block;
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--navy-soft), #dce6f0);
+  color: var(--navy);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.pw-box {
+  background: var(--amber-bg);
+  border: 1px dashed var(--amber);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.pw-box code {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+.link {
+  color: var(--navy-2);
+  text-decoration: underline;
+}
+
+/* ---- Sơ đồ tổ chức ---- */
+.org-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.team-card summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.team-card summary::-webkit-details-marker {
+  display: none;
+}
+.team-card summary .chev {
+  color: var(--text-3);
+  font-size: 13px;
+  transition: transform 0.15s ease;
+}
+.team-card[open] summary .chev {
+  transform: rotate(90deg);
+}
+.team-body {
+  margin-top: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 12.5px;
+}
+.member-row a {
+  flex: 1;
+  min-width: 0;
+}
+.icon-btn {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.icon-btn:hover {
+  background: var(--bg);
+  color: var(--danger);
+}
+.badge.xs {
+  font-size: 9.5px;
+  padding: 1px 6px;
+}
+.team-body .btn {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: center;
+}

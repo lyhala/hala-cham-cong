@@ -27,3 +27,9 @@ export function recordFailure(key: string) {
 export function clearFailures(key: string) {
   fails.delete(key);
 }
+
+/** Xóa mọi lần sai của 1 email (VD sau khi Admin reset mật khẩu cho người đó). */
+export function clearFailuresForEmail(email: string) {
+  const prefix = `${email.toLowerCase()}|`;
+  for (const key of fails.keys()) if (key.startsWith(prefix)) fails.delete(key);
+}

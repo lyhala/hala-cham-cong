@@ -49,7 +49,9 @@ export default async function AdminDashboard() {
               {missingInfo.map((e) => (
                 <tr key={e.id}>
                   <td style={{ borderTop: "none" }}>{e.code}</td>
-                  <td style={{ borderTop: "none" }}>{e.name}</td>
+                  <td style={{ borderTop: "none" }}>
+                    <Link href={`/admin/employees/${e.id}`} className="link">{e.name}</Link>
+                  </td>
                   <td style={{ borderTop: "none", color: "var(--danger)", fontSize: 11.5 }}>
                     Chưa chọn: {[!e.teamId && "Team", !e.role && "Role", !e.email && "Email"].filter(Boolean).join(", ")}
                   </td>
