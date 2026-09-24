@@ -1,0 +1,483 @@
+// Cấu trúc database hệ thống Chấm công - Lương Hala Games.
+// Mỗi "model" = 1 bảng. Mục tham chiếu (§) là số mục trong spec-cham-cong-luong.md.
+//
+// Quy ước chung:
+// - Tiền: Int, đơn vị VNĐ (đã làm tròn).
+// - Tháng: String dạng "YYYY-MM" (VD "2026-09").
+// - Ngày không giờ: @db.Date. Mốc thời gian: DateTime (lưu UTC, hiển thị giờ VN).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ───────────────────────── Enum ─────────────────────────
+
+enum Role {
+  EMPLOYEE
+  LEADER
+  ADMIN
+}
+
+enum TeamType {
+  PRODUCTION // Team sản xuất — được chọn làm Team in-charge dự án
+  SUPPORT // Team hỗ trợ (R&D, Marketing) — mặc định có mặt ở mọi dự án Active
+  OTHER // VD HCNS
+}
+
+enum EmployeeStatus {
+  ACTIVE // Đang làm
+  RESIGNED // Đã nghỉ
+}
+
+enum RequestType {
+  OT
+  LATE // Đi muộn
+  EARLY_LEAVE // Về sớm
+  LEAVE // Nghỉ (có sub-type)
+  WFH
+  SALARY_ADVANCE // Tạm ứng lương
+}
+
+enum LeaveSubtype {
+  ANNUAL // Nghỉ phép
+  UNPAID // Nghỉ không lương
+  MARRIAGE // Nghỉ kết hôn
+  FUNERAL // Nghỉ tang lễ
+}
+
+enum DayPortion {
+  FULL
+  MORNING
+  AFTERNOON
+}
+
+enum RequestStatus {
+  PENDING // Chờ duyệt
+  LEADER_APPROVED // Duyệt 2 cấp: Leader đã duyệt, chờ Admin
+  APPROVED // Đã duyệt (final)
+  REJECTED
+  WITHDRAWN // Nhân viên thu hồi khi còn chờ duyệt
+}
+
+enum PayslipStatus {
+  DRAFT // Đã tính, chưa gửi
+  SENT // Đã gửi cho nhân sự
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum PerformanceGroup {
+  BASE
+  OUT
+}
+
+enum NotificationType {
+  REQUEST_PENDING
+  REQUEST_APPROVED
+  REQUEST_REJECTED
+  PAYSLIP_SENT
+  BONUS_RECEIVED
+  OTHER
+}
+
+// ─────────────────── Nhân sự & tổ chức (§2) ───────────────────
+
+model Team {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  type      TeamType @default(OTHER)
+  sortOrder Int      @default(0)
+
+  leaderId String?   @unique
+  leader   Employee? @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
+
+  members          Employee[] @relation("TeamMembers")
+  inChargeProjects Project[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Employee {
+  id      String  @id @default(cuid())
+  code    String  @unique // Mã NV (NV001...) — khóa match khi sync Sheet, truyền sang field MSNV của Hanet
+  name    String
+  email   String? @unique // Dùng để đăng nhập (lưu chữ thường). Được để trống khi tạo nhanh từ sơ đồ tổ chức
+  phone   String?
+  address String?
+
+  // Để trống = "Chưa chọn" (đánh dấu đỏ trên giao diện)
+  teamId String?
+  team   Team?   @relation("TeamMembers", fields: [teamId], references: [id], onDelete: SetNull)
+  role   Role?
+
+  isCEO    Boolean        @default(false) // Chỉ là vị trí hiển thị trên sơ đồ, không phải role
+  status   EmployeeStatus @default(ACTIVE)
+  joinedAt DateTime?      @db.Date // Dùng để prorate phép năm
+  leftAt   DateTime?      @db.Date
+
+  // Cờ trong hồ sơ
+  attendanceExempt Boolean @default(false) // Miễn chấm công (§3.2)
+  noProject        Boolean @default(false) // Không tham gia dự án → vào Chi phí cố định (§14.2)
+  parkingOutside   Boolean @default(false) // Gửi xe ngoài → được 5.000đ/ngày (§6.1)
+
+  // Hanet (§3.1)
+  hanetPersonId String? @unique
+  faceImageUrl  String?
+
+  // Đăng nhập
+  passwordHash       String?
+  mustChangePassword Boolean   @default(true) // Bắt đổi mật khẩu lần đầu
+  isLocked           Boolean   @default(false) // Tự khóa khi "Đã nghỉ"
+  lastLoginAt        DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  leadsTeam Team? @relation("TeamLeader")
+
+  sessions          Session[]
+  salaryHistory     SalaryHistory[]     @relation("SalaryHistoryEmployee")
+  salaryHistoryMade SalaryHistory[]     @relation("SalaryHistoryCreatedBy")
+  attendanceLogs    AttendanceLog[]
+  dailyAttendance   DailyAttendance[]
+  requests          Request[]           @relation("RequestOwner")
+  leaderApprovals   Request[]           @relation("RequestLeaderApprover")
+  finalApprovals    Request[]           @relation("RequestFinalApprover")
+  rejections        Request[]           @relation("RequestRejecter")
+  deletions         Request[]           @relation("RequestDeleter")
+  payslips          Payslip[]
+  performanceScores PerformanceScore[]
+  bonuses           Bonus[]             @relation("BonusReceiver")
+  bonusesCreated    Bonus[]             @relation("BonusCreatedBy")
+  allocations       ProjectAllocation[]
+  notifications     Notification[]
+  pushSubscriptions PushSubscription[]
+  auditLogs         AuditLog[]
+  settingsUpdated   Setting[]
+}
+
+// Phiên đăng nhập. Lưu hash của token (không lưu token gốc) để lộ DB cũng không dùng được.
+model Session {
+  id         String   @id // sha256(token)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([employeeId])
+}
+
+// Lịch sử lương base + performance, không ghi đè (§6.2)
+model SalaryHistory {
+  id            String    @id @default(cuid())
+  employeeId    String
+  employee      Employee  @relation("SalaryHistoryEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  baseSalary    Int
+  perfSalary    Int
+  effectiveFrom DateTime  @db.Date
+  note          String?
+  createdById   String?
+  createdBy     Employee? @relation("SalaryHistoryCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt     DateTime  @default(now())
+
+  @@index([employeeId, effectiveFrom])
+}
+
+// ───────────────────────── Chấm công (§3) ─────────────────────────
+
+// Ngày ngoại lệ so với lịch mặc định T2–T6: lễ, nghỉ bù, đi làm bù T7...
+model WorkCalendarDay {
+  date      DateTime @id @db.Date
+  isWorkday Boolean
+  isHoliday Boolean  @default(false) // Ngày lễ tết → OT hệ số 3x
+  note      String?
+  updatedAt DateTime @updatedAt
+}
+
+// Log thô từ webhook Hanet
+model AttendanceLog {
+  id            String    @id @default(cuid())
+  employeeId    String? // null nếu personID chưa map được nhân sự nào
+  employee      Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  hanetPersonId String
+  deviceId      String?
+  time          DateTime
+  imageUrl      String?
+  raw           Json?
+  createdAt     DateTime  @default(now())
+
+  @@index([employeeId, time])
+  @@index([hanetPersonId, time])
+}
+
+// Bảng công theo ngày
+model DailyAttendance {
+  id              String    @id @default(cuid())
+  employeeId      String
+  employee        Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date            DateTime  @db.Date
+  checkIn         DateTime?
+  checkOut        DateTime?
+  workUnits       Float     @default(0) // Số công của ngày (VD 0.8)
+  lateMinutes     Int       @default(0)
+  latePenalty     Int       @default(0) // Tiền phạt ngày này trước khi xét miễn phạt
+  halfDayDeducted Boolean   @default(false) // Đến sau 10h → trừ 1/2 công
+  isManual        Boolean   @default(false) // Admin/Leader sửa tay
+  note            String?
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([date])
+}
+
+// ───────────────────────── Đơn từ (§5) ─────────────────────────
+
+model Request {
+  id           String        @id @default(cuid())
+  employeeId   String
+  employee     Employee      @relation("RequestOwner", fields: [employeeId], references: [id], onDelete: Cascade)
+  type         RequestType
+  leaveSubtype LeaveSubtype?
+
+  // OT / Đi muộn / Về sớm: 1 ngày + khung giờ. Nghỉ / WFH: khoảng ngày. Tạm ứng: không cần ngày.
+  dateFrom   DateTime?   @db.Date
+  dateTo     DateTime?   @db.Date
+  dayPortion DayPortion? // Cả ngày / nửa ngày (Nghỉ, WFH)
+  timeFrom   String? // "HH:mm"
+  timeTo     String? // "HH:mm"
+  amount     Int? // Tạm ứng lương
+  reason     String
+
+  status RequestStatus @default(PENDING)
+
+  leaderApprovedById String?
+  leaderApprovedBy   Employee? @relation("RequestLeaderApprover", fields: [leaderApprovedById], references: [id], onDelete: SetNull)
+  leaderApprovedAt   DateTime?
+  approvedById       String?
+  approvedBy         Employee? @relation("RequestFinalApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt         DateTime?
+  rejectedById       String?
+  rejectedBy         Employee? @relation("RequestRejecter", fields: [rejectedById], references: [id], onDelete: SetNull)
+  rejectedAt         DateTime?
+  rejectReason       String?
+
+  // Admin/Leader "Xóa" — ẩn đơn và revert phần công/miễn phạt đã áp dụng
+  deletedAt   DateTime?
+  deletedById String?
+  deletedBy   Employee? @relation("RequestDeleter", fields: [deletedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([employeeId, type, dateFrom])
+  @@index([status])
+}
+
+// ───────────────────────── Lương (§6, §14.1) ─────────────────────────
+
+model Payslip {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  month      String // "YYYY-MM"
+
+  // Đầu vào (snapshot tại lúc tính)
+  standardWorkDays Float // Ngày công tháng
+  baseSalary       Int
+  perfSalary       Int
+  perfCoefficient  Float
+  annualLeaveUsed  Float @default(0)
+  unpaidLeaveDays  Float @default(0)
+
+  // Kết quả
+  actualWorkUnits  Float // Công thực
+  otHours          Float @default(0)
+  otUnits          Float @default(0) // Công OT
+  totalUnits       Float // Tổng công
+  salaryByUnits    Int // Lương theo tổng công
+  perfActual       Int // Performance thực
+  mealAllowance    Int // Hỗ trợ cơm
+  parkingAllowance Int // Tiền gửi xe
+  latePenalty      Int   @default(0)
+  advanceDeduction Int   @default(0) // Tạm ứng lương
+  netPay           Int // Thực nhận
+
+  // Kế toán điền trên Sheet rồi sync ngược (chỉ Admin thấy)
+  bhxhEmployee Int?
+  bhxhCompany  Int?
+  tax          Int?
+  totalCost    Int? // Tổng chi phí = Thực nhận + BHXH NLĐ + BHXH cty + Thuế
+
+  status       PayslipStatus @default(DRAFT)
+  calculatedAt DateTime      @default(now())
+  sentAt       DateTime?
+
+  @@unique([employeeId, month])
+  @@index([month])
+}
+
+// ───────────────────────── Performance (§8) ─────────────────────────
+
+model PerformanceCriterion {
+  id        String             @id @default(cuid())
+  group     PerformanceGroup
+  name      String
+  weight    Int // % — tổng các tiêu chí phải = 100
+  sortOrder Int                @default(0)
+  scores    PerformanceScore[]
+}
+
+model PerformanceScore {
+  id          String               @id @default(cuid())
+  employeeId  String
+  employee    Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  criterionId String
+  criterion   PerformanceCriterion @relation(fields: [criterionId], references: [id], onDelete: Cascade)
+  month       String // "YYYY-MM"
+  score       Float // 0–5
+  syncedAt    DateTime             @default(now())
+
+  @@unique([employeeId, criterionId, month])
+  @@index([month])
+}
+
+// ───────────────────────── Thưởng (§7) ─────────────────────────
+
+model Bonus {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation("BonusReceiver", fields: [employeeId], references: [id], onDelete: Cascade)
+  type        String // Không hard-code: "Tết âm", "Thưởng dự án"...
+  amount      Int
+  date        DateTime  @db.Date
+  projectId   String? // Có → Chi phí trực tiếp dự án. Không → Chi phí cố định
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  note        String?
+  createdById String?
+  createdBy   Employee? @relation("BonusCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([date])
+  @@index([employeeId])
+}
+
+// ───────────────────────── Dự án & chi phí (§14) ─────────────────────────
+
+model Project {
+  id             String        @id @default(cuid())
+  code           String        @unique // Mã tự sinh
+  name           String
+  status         ProjectStatus @default(ACTIVE)
+  inChargeTeamId String?
+  inChargeTeam   Team?         @relation(fields: [inChargeTeamId], references: [id], onDelete: SetNull)
+  archivedAt     DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  allocations  ProjectAllocation[]
+  monthlyCosts ProjectMonthlyCost[]
+  bonuses      Bonus[]
+}
+
+// Hệ số phân bổ theo tháng (sync từ Sheet). Tổng hệ số 1 người trong 1 tháng = 1
+model ProjectAllocation {
+  id          String   @id @default(cuid())
+  month       String
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  coefficient Float
+  syncedAt    DateTime @default(now())
+
+  @@unique([month, employeeId, projectId])
+  @@index([month, projectId])
+}
+
+// Chi phí cố định nhập tay theo tháng (thuê VP, kế toán thuê ngoài, phần mềm...)
+model FixedCost {
+  id        String   @id @default(cuid())
+  month     String
+  name      String
+  amount    Int
+  note      String?
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([month])
+}
+
+// Số liệu nhập tay theo dự án/tháng (Outsourcing — sync ngược từ Sheet)
+model ProjectMonthlyCost {
+  id          String   @id @default(cuid())
+  month       String
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  outsourcing Int      @default(0)
+  syncedAt    DateTime @default(now())
+
+  @@unique([month, projectId])
+}
+
+// ───────────────────────── Hệ thống ─────────────────────────
+
+// Cấu hình dạng key → JSON: bảng phạt, tham số lương, duyệt 1/2 cấp, quyền theo role,
+// hiện/ẩn dòng phiếu lương, giao diện, Google Sheets... Xem src/lib/settings.ts
+model Setting {
+  key         String    @id
+  value       Json
+  updatedAt   DateTime  @updatedAt
+  updatedById String?
+  updatedBy   Employee? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id         String           @id @default(cuid())
+  employeeId String
+  employee   Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  type       NotificationType
+  title      String
+  link       String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([employeeId, readAt])
+}
+
+// Web Push (PWA) — mỗi thiết bị 1 dòng (§13)
+model PushSubscription {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+}
+
+// Nhật ký thao tác nhạy cảm: ai / làm gì / lúc nào (§15)
+model AuditLog {
+  id         String    @id @default(cuid())
+  actorId    String?
+  actor      Employee? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action     String // VD "request.approve", "attendance.edit", "config.update"
+  targetType String?
+  targetId   String?
+  summary    String
+  createdAt  DateTime  @default(now())
+
+  @@index([createdAt])
+  @@index([actorId])
+}

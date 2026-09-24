@@ -1,0 +1,88 @@
+// Cấu hình hệ thống (bảng Setting, dạng key → JSON) và giá trị mặc định theo spec.
+// Admin sửa được qua màn Cấu hình (các module sau). Khi DB chưa có key, dùng giá trị mặc định ở đây.
+
+import type { RequestType } from "@/generated/prisma/enums";
+
+export const SETTING_DEFAULTS = {
+  // §3.2 — Ca chuẩn
+  workSchedule: {
+    morningStart: "08:30",
+    morningEnd: "12:00",
+    afternoonStart: "13:30",
+    afternoonEnd: "17:30",
+    hoursPerDay: 7.5,
+    lunchBreakHours: 1.5,
+    workWeekdays: [1, 2, 3, 4, 5], // T2–T6 (0 = Chủ nhật)
+  },
+
+  // §3.3 — Phạt đi muộn lũy tiến. perMinute: đ/phút cho phút nằm trong khung [from, to].
+  latePenalty: {
+    tiers: [
+      { from: "08:31", to: "08:45", perMinute: 1000 },
+      { from: "08:46", to: "09:00", perMinute: 2000 },
+      { from: "09:01", to: "09:30", perMinute: 3000 },
+      { from: "09:31", to: "10:00", perMinute: 5000 },
+    ],
+    halfDayAfter: "10:00", // Đến sau 10h → trừ 1/2 công
+    freeExemptionsPerMonth: 3,
+  },
+
+  // §6.1 — Tham số lương
+  salaryParams: {
+    mealAllowancePerMonth: 1_250_000,
+    parkingPerDay: 5_000,
+    otCoefficients: { weekday: 1.5, weekend: 2, holiday: 3 },
+    annualLeaveDaysPerYear: 12,
+  },
+
+  // §5 — Duyệt 1 cấp (Leader HOẶC Admin) hay 2 cấp (Leader rồi Admin)
+  approvalLevels: {
+    OT: 2,
+    LATE: 1,
+    EARLY_LEAVE: 1,
+    LEAVE: 1,
+    WFH: 1,
+    SALARY_ADVANCE: 2,
+  } satisfies Record<RequestType, 1 | 2>,
+
+  // §2 — Bật/tắt quyền & nút chức năng theo role
+  rolePermissions: {
+    leader: { approve: true, editAttendance: true, viewSalary: false },
+    employee: { wfh: false, advance: true },
+  },
+
+  // §14.1 — Dòng hiển thị trên phiếu lương nhân sự thấy
+  payslipVisibleLines: {
+    baseSalary: true,
+    perfSalary: true,
+    perfCoefficient: true,
+    workUnits: true,
+    ot: true,
+    mealAllowance: true,
+    parkingAllowance: true,
+    latePenalty: true,
+    advanceDeduction: true,
+  },
+
+  // §11 — Giao diện
+  appearance: {
+    headerColor: "#12283F",
+    backgroundImageUrl: null as string | null,
+  },
+
+  // §7 — Gợi ý loại thưởng (gõ loại mới sẽ tự thêm vào)
+  bonusTypeSuggestions: ["2/9", "Tết dương", "Thưởng dự án", "Tết âm", "Thưởng nóng"],
+
+  // §9 — Link các Google Sheet
+  googleSheets: {
+    employeesSheetUrl: null as string | null,
+    performanceSheetUrl: null as string | null,
+    payrollSheetUrl: null as string | null,
+    allocationSheetUrl: null as string | null,
+    projectCostSheetUrl: null as string | null,
+    teamCostSheetUrl: null as string | null,
+  },
+};
+
+export type SettingKey = keyof typeof SETTING_DEFAULTS;
+export type SettingValue<K extends SettingKey> = (typeof SETTING_DEFAULTS)[K];
