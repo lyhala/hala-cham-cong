@@ -48,7 +48,17 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         />
         <main className="content">{children}</main>
       </div>
-      <BottomNav groups={groups} />
+      <BottomNav
+        groups={groups}
+        moreFooter={
+          <>
+            <Link href="/profile" className="btn">👤 Hồ sơ</Link>
+            <form action={logout}>
+              <button type="submit" className="btn danger">Đăng xuất</button>
+            </form>
+          </>
+        }
+      />
     </div>
   );
 }

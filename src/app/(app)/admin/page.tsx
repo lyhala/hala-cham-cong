@@ -29,7 +29,7 @@ export default async function AdminDashboard() {
           <div className="stat-label">Tổng nhân sự</div>
           <div className="stat-value">{activeCount}</div>
         </div>
-        <Link href="/admin/approvals" className="card">
+        <Link href="/requests?tab=approve" className="card">
           <div className="stat-label">Đơn chờ duyệt</div>
           <div className="stat-value" style={{ color: pendingCount ? "var(--amber)" : undefined }}>{pendingCount}</div>
         </Link>

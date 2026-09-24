@@ -45,7 +45,7 @@ export default async function HomePage() {
           <div className="stat-value" style={{ color: myPending ? "var(--amber)" : undefined }}>{myPending}</div>
         </Link>
         {isLeader && (
-          <Link href="/requests" className="card">
+          <Link href="/requests?tab=approve" className="card">
             <div className="stat-label">Đơn chưa duyệt (team)</div>
             <div className="stat-value" style={{ color: teamPending ? "var(--amber)" : undefined }}>{teamPending}</div>
           </Link>

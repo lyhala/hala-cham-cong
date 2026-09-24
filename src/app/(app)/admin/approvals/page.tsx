@@ -1,13 +1,6 @@
-import { ComingSoon } from "@/components/ComingSoon";
-import { requireRole } from "@/lib/auth/session";
+import { redirect } from "next/navigation";
 
-export default async function Page() {
-  await requireRole("ADMIN");
-  return (
-    <ComingSoon
-      title="Duyệt đơn"
-      subtitle="Toàn quyền duyệt / từ chối / xóa"
-      features={["Danh sách đơn chờ duyệt toàn công ty", "Cảnh báo vượt 3 lần miễn phạt đi muộn", "Xóa đơn đã duyệt → tự revert công"]}
-    />
-  );
+// "Duyệt đơn" đã gộp vào màn Đơn từ (tab Duyệt đơn) — giữ đường dẫn cũ để không lỗi link.
+export default function ApprovalsRedirect() {
+  redirect("/requests?tab=approve");
 }
