@@ -6,7 +6,7 @@
 import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, type Prisma } from "../src/generated/prisma/client";
-import { defaultPasswordFor, hashPassword } from "../src/lib/auth/password";
+import { generateTempPassword, hashPassword } from "../src/lib/auth/password";
 import { SETTING_DEFAULTS } from "../src/lib/settings";
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
@@ -42,7 +42,7 @@ async function createEmployeeIfMissing(data: {
   if (existing) return { employee: existing, created: false, password: null };
 
   const team = data.teamName ? await prisma.team.findUnique({ where: { name: data.teamName } }) : null;
-  const password = data.password ?? defaultPasswordFor(data.code);
+  const password = data.password || generateTempPassword();
   const employee = await prisma.employee.create({
     data: {
       code: data.code,
@@ -82,7 +82,7 @@ async function main() {
     role: "ADMIN",
     password: process.env.ADMIN_INITIAL_PASSWORD,
   });
-  if (admin.created) console.log(`✓ Tạo Admin: ${adminEmail} / mật khẩu: ${admin.password} (bắt đổi lần đầu)`);
+  if (admin.created) console.log(`✓ Tạo Admin: ${adminEmail} / mật khẩu tạm: ${admin.password} (bắt đổi lần đầu)`);
   else console.log(`✓ Admin đã có: ${admin.employee.email}`);
 
   if (process.env.SEED_DEMO === "1") {

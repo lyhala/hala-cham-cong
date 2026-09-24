@@ -31,7 +31,7 @@ src/lib/settings.ts       ← Cấu hình mặc định (bảng phạt, tham s�
 
 - Mọi trang gọi `requireUser()` hoặc `requireRole(...)`; mọi API bọc `withAuth(...)`. Việc kiểm tra quyền chạy trên server (spec §15), không dựa vào việc ẩn nút.
 - Nhân sự bị khóa, đã nghỉ hoặc chưa có Role thì không đăng nhập được, và các phiên đang mở cũng mất hiệu lực ngay.
-- Mật khẩu mặc định: `Hala@<Mã NV>` (VD `Hala@NV001`), bắt buộc đổi ở lần đăng nhập đầu.
+- Mật khẩu tạm cho nhân sự mới: sinh **ngẫu nhiên** (VD `k7Rm4xPa2q`), Admin gửi riêng cho từng người, bắt buộc đổi ở lần đăng nhập đầu.
 - Nhập sai mật khẩu 5 lần thì bị khóa đăng nhập 15 phút.
 
 ---
@@ -47,10 +47,10 @@ src/lib/settings.ts       ← Cấu hình mặc định (bảng phạt, tham s�
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (gõ đúng như vậy, Railway tự điền) |
    | `ADMIN_EMAIL` | Email của bạn, dùng để đăng nhập Admin |
    | `ADMIN_NAME` | Tên hiển thị của bạn |
-   | `ADMIN_INITIAL_PASSWORD` | Mật khẩu tạm cho lần đăng nhập đầu (nên đặt, xem mục bảo mật bên dưới) |
+   | `ADMIN_INITIAL_PASSWORD` | Mật khẩu tạm cho lần đăng nhập đầu (không bắt buộc, xem bước 7) |
 5. Tab **Settings** → **Networking** → **Generate Domain**. Railway cấp link dạng `xxx.up.railway.app`.
 6. Mỗi lần deploy, Railway tự chạy lần lượt: cập nhật database (migrate), tạo dữ liệu khởi tạo (seed, không ghi đè dữ liệu đã có), rồi khởi động web.
-7. Mở link, đăng nhập bằng `ADMIN_EMAIL` với mật khẩu ở `ADMIN_INITIAL_PASSWORD` (nếu không đặt thì là `Hala@ADM`). Hệ thống sẽ bắt đổi mật khẩu ngay.
+7. Mở link, đăng nhập bằng `ADMIN_EMAIL` với mật khẩu ở `ADMIN_INITIAL_PASSWORD`. Nếu không đặt, hệ thống tự sinh mật khẩu ngẫu nhiên và in ra **một lần** trong log deploy đầu tiên (Railway → tab **Deployments** → bấm vào lần deploy → **View logs**, tìm dòng `Tạo Admin`). Hệ thống sẽ bắt đổi mật khẩu ngay.
 
 Sau đó, mỗi lần code mới được đẩy lên nhánh đã kết nối, Railway tự deploy lại.
 
