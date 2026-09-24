@@ -23,10 +23,10 @@ enum Role {
   ADMIN
 }
 
+// Bắt buộc chọn 1 trong 2 loại khi tạo team
 enum TeamType {
-  PRODUCTION // Team sản xuất — được chọn làm Team in-charge dự án
-  SUPPORT // Team hỗ trợ (R&D, Marketing) — mặc định có mặt ở mọi dự án Active
-  OTHER // VD HCNS
+  PRODUCTION // Team sản xuất — được chọn làm Team in-charge dự án, có báo cáo "Chi phí theo Team sản xuất"
+  SUPPORT // Team hỗ trợ (R&D, Marketing, HCNS) — mặc định tham gia mọi dự án Active qua hệ số, không làm in-charge
 }
 
 enum EmployeeStatus {
@@ -93,7 +93,7 @@ enum NotificationType {
 model Team {
   id        String   @id @default(cuid())
   name      String   @unique
-  type      TeamType @default(OTHER)
+  type      TeamType
   sortOrder Int      @default(0)
 
   leaderId String?   @unique

@@ -20,7 +20,7 @@ const TEAMS = [
   { name: "Joe", type: "PRODUCTION" },
   { name: "Marketing", type: "SUPPORT" },
   { name: "R&D", type: "SUPPORT" },
-  { name: "HCNS", type: "OTHER" },
+  { name: "HCNS", type: "SUPPORT" },
 ] as const;
 
 const CRITERIA = [
@@ -104,10 +104,14 @@ async function resetAdminPasswordIfRequested(adminEmail: string) {
 }
 
 async function main() {
-  for (const [i, t] of TEAMS.entries()) {
-    await prisma.team.upsert({ where: { name: t.name }, update: {}, create: { ...t, sortOrder: i } });
+  // Team mẫu chỉ tạo 1 lần khi database còn trống. Sau đó Admin tự tạo / đổi tên / xóa team,
+  // khởi động lại không tạo lại team đã bị đổi tên hay xóa.
+  if ((await prisma.team.count()) === 0) {
+    await prisma.team.createMany({ data: TEAMS.map((t, i) => ({ ...t, sortOrder: i })) });
+    console.log(`✓ Tạo ${TEAMS.length} team mẫu`);
+  } else {
+    console.log("✓ Team đã có");
   }
-  console.log(`✓ ${TEAMS.length} team`);
 
   if ((await prisma.performanceCriterion.count()) === 0) {
     await prisma.performanceCriterion.createMany({ data: CRITERIA.map((c, i) => ({ ...c, sortOrder: i })) });
@@ -142,7 +146,7 @@ async function main() {
     const leader = await createEmployeeIfMissing({
       code: "NV002", name: "Trần Trung Kiên", email: "leader.demo@example.com", role: "LEADER", teamName: "Joe",
     });
-    await prisma.team.update({ where: { name: "Joe" }, data: { leaderId: leader.employee.id } });
+    await prisma.team.updateMany({ where: { name: "Joe", leaderId: null }, data: { leaderId: leader.employee.id } });
     const emp = await createEmployeeIfMissing({
       code: "NV001", name: "Ninh Thành Vinh", email: "nhanvien.demo@example.com", role: "EMPLOYEE", teamName: "Joe",
     });
