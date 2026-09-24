@@ -49,8 +49,15 @@ src/lib/settings.ts       ← Cấu hình mặc định (bảng phạt, tham s�
    | `ADMIN_NAME` | Tên hiển thị của bạn |
    | `ADMIN_INITIAL_PASSWORD` | Mật khẩu tạm cho lần đăng nhập đầu (không bắt buộc, xem bước 7) |
 5. Tab **Settings** → **Networking** → **Generate Domain**. Railway cấp link dạng `xxx.up.railway.app`.
-6. Mỗi lần deploy, Railway tự chạy lần lượt: cập nhật database (migrate), tạo dữ liệu khởi tạo (seed, không ghi đè dữ liệu đã có), rồi khởi động web.
-7. Mở link, đăng nhập bằng `ADMIN_EMAIL` với mật khẩu ở `ADMIN_INITIAL_PASSWORD`. Nếu không đặt, hệ thống tự sinh mật khẩu ngẫu nhiên và in ra **một lần** trong log deploy đầu tiên (Railway → tab **Deployments** → bấm vào lần deploy → **View logs**, tìm dòng `Tạo Admin`). Hệ thống sẽ bắt đổi mật khẩu ngay.
+6. Mỗi lần web khởi động (lệnh `npm run start:railway`), hệ thống tự chạy lần lượt: cập nhật database (migrate), tạo dữ liệu khởi tạo (seed, không ghi đè dữ liệu đã có), rồi bật web. Log hiện ở tab **Deploy Logs** của lần deploy.
+7. Mở link, đăng nhập bằng `ADMIN_EMAIL` với mật khẩu ở `ADMIN_INITIAL_PASSWORD`. Nếu không đặt, hệ thống tự sinh mật khẩu ngẫu nhiên và in ra **một lần** trong **Deploy Logs** của lần deploy tạo Admin (tìm dòng `Tạo Admin`). Hệ thống sẽ bắt đổi mật khẩu ngay.
+
+### Quên / mất mật khẩu Admin
+
+1. Railway → service web → **Variables** → thêm `ADMIN_RESET_PASSWORD` = một mật khẩu tạm bạn tự đặt (VD `TamThoi2026`).
+2. Chờ Railway deploy lại (hoặc **Deployments** → **⋯** → **Redeploy**). Trong **Deploy Logs** sẽ có dòng `✓ Đã đặt lại mật khẩu Admin`.
+3. Đăng nhập bằng `ADMIN_EMAIL` + mật khẩu tạm đó → hệ thống bắt đổi mật khẩu mới.
+4. Xóa biến `ADMIN_RESET_PASSWORD`. (Nếu quên xóa cũng không sao: mỗi giá trị chỉ áp dụng 1 lần, không ghi đè mật khẩu bạn đã đổi.)
 
 Sau đó, mỗi lần code mới được đẩy lên nhánh đã kết nối, Railway tự deploy lại.
 

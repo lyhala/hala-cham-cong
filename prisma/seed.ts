@@ -3,7 +3,11 @@
 //
 //   npm run db:seed                 → dữ liệu khởi tạo
 //   SEED_DEMO=1 npm run db:seed     → thêm 1 Leader + 1 Nhân viên mẫu để thử đăng nhập
+//
+// Đặt lại mật khẩu Admin (khi quên / mất mật khẩu tạm): thêm biến ADMIN_RESET_PASSWORD="<mật khẩu tạm mới>"
+// rồi deploy lại. Mỗi giá trị chỉ áp dụng 1 lần (restart sau đó không đặt lại nữa). Xong nên xóa biến.
 import "dotenv/config";
+import { createHash } from "node:crypto";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, type Prisma } from "../src/generated/prisma/client";
 import { generateTempPassword, hashPassword } from "../src/lib/auth/password";
@@ -57,6 +61,48 @@ async function createEmployeeIfMissing(data: {
   return { employee, created: true, password };
 }
 
+// Đặt lại mật khẩu Admin theo biến ADMIN_RESET_PASSWORD. Lưu dấu (hash) giá trị đã áp dụng
+// để các lần khởi động sau không đặt lại nữa → Admin đổi mật khẩu xong sẽ không bị ghi đè.
+async function resetAdminPasswordIfRequested(adminEmail: string) {
+  const newPassword = process.env.ADMIN_RESET_PASSWORD;
+  if (!newPassword) return;
+
+  const marker = createHash("sha256").update(`${adminEmail.toLowerCase()}|${newPassword}`).digest("hex");
+  const MARKER_KEY = "system.adminPasswordResetMarker";
+  const applied = await prisma.setting.findUnique({ where: { key: MARKER_KEY } });
+  if ((applied?.value as { marker?: string } | null)?.marker === marker) {
+    console.log("• ADMIN_RESET_PASSWORD đã áp dụng trước đó — bỏ qua. Có thể xóa biến này.");
+    return;
+  }
+
+  const admin = await prisma.employee.findUnique({ where: { email: adminEmail.toLowerCase() } });
+  if (!admin) {
+    console.log(`✗ Không tìm thấy tài khoản ${adminEmail} để đặt lại mật khẩu`);
+    return;
+  }
+
+  await prisma.employee.update({
+    where: { id: admin.id },
+    data: {
+      passwordHash: await hashPassword(newPassword),
+      mustChangePassword: true,
+      isLocked: false,
+      status: "ACTIVE",
+      role: "ADMIN",
+    },
+  });
+  await prisma.session.deleteMany({ where: { employeeId: admin.id } });
+  await prisma.setting.upsert({
+    where: { key: MARKER_KEY },
+    update: { value: { marker } },
+    create: { key: MARKER_KEY, value: { marker } },
+  });
+  await prisma.auditLog.create({
+    data: { actorId: null, action: "auth.admin_password_reset", summary: `Đặt lại mật khẩu Admin ${adminEmail} qua biến môi trường` },
+  });
+  console.log(`✓ Đã đặt lại mật khẩu Admin ${adminEmail} theo biến ADMIN_RESET_PASSWORD (bắt đổi khi đăng nhập). Nên xóa biến này.`);
+}
+
 async function main() {
   for (const [i, t] of TEAMS.entries()) {
     await prisma.team.upsert({ where: { name: t.name }, update: {}, create: { ...t, sortOrder: i } });
@@ -82,8 +128,15 @@ async function main() {
     role: "ADMIN",
     password: process.env.ADMIN_INITIAL_PASSWORD,
   });
-  if (admin.created) console.log(`✓ Tạo Admin: ${adminEmail} / mật khẩu tạm: ${admin.password} (bắt đổi lần đầu)`);
-  else console.log(`✓ Admin đã có: ${admin.employee.email}`);
+  if (!admin.created) {
+    console.log(`✓ Admin đã có: ${admin.employee.email}`);
+  } else if (process.env.ADMIN_INITIAL_PASSWORD) {
+    console.log(`✓ Tạo Admin: ${adminEmail} / mật khẩu tạm: theo biến ADMIN_INITIAL_PASSWORD (bắt đổi lần đầu)`);
+  } else {
+    console.log(`✓ Tạo Admin: ${adminEmail} / mật khẩu tạm: ${admin.password} (bắt đổi lần đầu)`);
+  }
+
+  await resetAdminPasswordIfRequested(adminEmail);
 
   if (process.env.SEED_DEMO === "1") {
     const leader = await createEmployeeIfMissing({
