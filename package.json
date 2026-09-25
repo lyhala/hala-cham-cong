@@ -14,6 +14,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "check:rules": "tsx scripts/check-attendance-rules.mts",
+    "show:attendance": "tsx scripts/show-attendance.mts",
+    "sim:clear": "tsx scripts/clear-sim.mts",
     "sim:hanet": "tsx scripts/simulate-hanet.mts",
     "start:railway": "prisma migrate deploy && prisma db seed && next start"
   },
