@@ -70,7 +70,7 @@ export async function runRetention(prisma: PrismaClient, options: { dryRun?: boo
     },
   };
 
-  const run = async <T>(count: () => Promise<number>, del: () => Promise<{ count: number }>) => (options.dryRun ? count() : (await del()).count);
+  const run = async (count: () => Promise<number>, del: () => Promise<{ count: number }>) => (options.dryRun ? count() : (await del()).count);
   const result: RetentionResult = {
     payslips: await run(() => prisma.payslip.count({ where: where.payslips }), () => prisma.payslip.deleteMany({ where: where.payslips })),
     attendanceLogs: await run(() => prisma.attendanceLog.count({ where: where.attendanceLogs }), () => prisma.attendanceLog.deleteMany({ where: where.attendanceLogs })),
