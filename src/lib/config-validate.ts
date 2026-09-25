@@ -112,13 +112,17 @@ export function parseSalaryParams(f: Form): Parsed<Defaults["salaryParams"]> {
   return { value: { mealAllowancePerMonth: meal, parkingPerDay: parking, otCoefficients: otCoefficients as { weekday: number; weekend: number; holiday: number } } };
 }
 
-/** Phép năm: số ngày phép được cộng mỗi tháng (nhân sự chính thức) và số tháng thử việc mặc định. */
+/** Phép năm: số ngày phép cộng mỗi tháng, số tháng thử việc mặc định, và quy tắc tháng đầu (vào trước / sau ngày chốt). */
 export function parseLeavePolicy(f: Form): Parsed<Defaults["leavePolicy"]> {
   const daysPerMonth = num(f, "daysPerMonth");
   const probationMonths = int(f, "probationMonths", 0, 12);
+  const firstMonthCutoffDay = int(f, "firstMonthCutoffDay", 1, 31);
+  const firstMonthPartialDays = num(f, "firstMonthPartialDays");
   if (daysPerMonth === null || daysPerMonth < 0 || daysPerMonth > 5) return fail("Số ngày phép mỗi tháng phải từ 0 đến 5");
   if (probationMonths === null) return fail("Số tháng thử việc phải là số nguyên từ 0 đến 12");
-  return { value: { daysPerMonth, probationMonths } };
+  if (firstMonthCutoffDay === null) return fail("Ngày chốt tháng đầu phải là số nguyên từ 1 đến 31");
+  if (firstMonthPartialDays === null || firstMonthPartialDays < 0 || firstMonthPartialDays > daysPerMonth) return fail("Phép tháng đầu (vào sau ngày chốt) phải từ 0 đến số ngày phép mỗi tháng");
+  return { value: { daysPerMonth, probationMonths, firstMonthCutoffDay, firstMonthPartialDays } };
 }
 
 export const REQUEST_TYPES: RequestType[] = ["OT", "LATE", "EARLY_LEAVE", "LEAVE", "WFH", "SALARY_ADVANCE"];

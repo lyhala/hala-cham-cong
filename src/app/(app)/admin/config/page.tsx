@@ -60,6 +60,18 @@ async function WorkTab({ year }: { year: number }) {
     orderBy: { date: "asc" },
   });
   const thisMonth = currentMonthVN();
+  // Gộp các ngày ngoại lệ LIÊN TIẾP, cùng loại và cùng ghi chú thành 1 dải (kỳ nghỉ lễ nhiều ngày hiện 1 dòng)
+  const groups: { from: string; to: string; count: number; isHoliday: boolean; isWorkday: boolean; note: string | null }[] = [];
+  for (const row of days) {
+    const day = row.date.toISOString().slice(0, 10);
+    const last = groups[groups.length - 1];
+    const nextOfLast = last ? new Date(new Date(`${last.to}T00:00:00Z`).getTime() + 86_400_000).toISOString().slice(0, 10) : "";
+    if (last && nextOfLast === day && last.isHoliday === row.isHoliday && last.isWorkday === row.isWorkday && last.note === row.note) {
+      last.to = day;
+      last.count++;
+    } else groups.push({ from: day, to: day, count: 1, isHoliday: row.isHoliday, isWorkday: row.isWorkday, note: row.note });
+  }
+  const fmtDay = (iso: string) => iso.split("-").reverse().join("/");
 
   return (
     <>
@@ -115,14 +127,17 @@ async function WorkTab({ year }: { year: number }) {
         <MonthActions initialMonth={thisMonth} actions={[{ action: recalcAttendanceMonth, label: "Tính lại công tháng", confirm: "Tính lại công của cả tháng theo cấu hình hiện tại?" }]} />
       </Section>
 
-      <Section title={`Ngày ngoại lệ trong lịch — ${year}`} hint="Lịch mặc định là các ngày làm việc ở trên. Thêm ngày lễ (OT hệ số 3x), ngày nghỉ bù, hoặc ngày đi làm bù (VD thứ 7). Lưu xong công của tháng đó tự tính lại.">
+      <Section title={`Ngày ngoại lệ trong lịch — ${year}`} hint="Lịch mặc định là các ngày làm việc ở trên. Thêm ngày lễ (OT hệ số 3x), nghỉ bù, hoặc đi làm bù (VD thứ 7). Nghỉ lễ thường kéo dài nhiều ngày nên chọn được cả một dải ngày: điền “Từ ngày” và “Đến ngày” (để trống “Đến ngày” nếu chỉ 1 ngày). Lưu xong công của các tháng đó tự tính lại.">
         <div className="toolbar">
           <Link className="btn sm" href={`/admin/config?tab=work&year=${year - 1}`}>‹ {year - 1}</Link>
           <Link className="btn sm" href={`/admin/config?tab=work&year=${year + 1}`}>{year + 1} ›</Link>
         </div>
-        <ConfigForm action={addCalendarDay} label="Thêm / cập nhật ngày">
-          <div className="grid3">
-            <Field label="Ngày" name="date" type="date" defaultValue={`${year}-${todayVN().slice(5)}`} />
+        <ConfigForm action={addCalendarDay} label="Thêm / cập nhật">
+          <div className="grid2">
+            <Field label="Từ ngày" name="dateFrom" type="date" defaultValue={`${year}-${todayVN().slice(5)}`} />
+            <Field label="Đến ngày (để trống nếu chỉ 1 ngày)" name="dateTo" type="date" defaultValue="" />
+          </div>
+          <div className="grid2">
             <div className="field">
               <label htmlFor="kind">Loại ngày</label>
               <select id="kind" name="kind" defaultValue="HOLIDAY">
@@ -131,30 +146,30 @@ async function WorkTab({ year }: { year: number }) {
                 <option value="WORK">Đi làm bù (làm việc)</option>
               </select>
             </div>
-            <Field label="Ghi chú" name="note" defaultValue="" hint="VD: Quốc khánh 2/9" />
+            <Field label="Ghi chú" name="note" defaultValue="" hint="VD: Nghỉ Quốc khánh 2/9" />
           </div>
         </ConfigForm>
         <div className="table-wrap" style={{ marginTop: 14 }}>
           <table>
             <thead><tr><th>Ngày</th><th>Loại</th><th>Ghi chú</th><th /></tr></thead>
             <tbody>
-              {days.map((d) => {
-                const iso = d.date.toISOString().slice(0, 10);
-                return (
-                  <tr key={iso}>
-                    <td>{iso.split("-").reverse().join("/")} <span style={{ color: "var(--text-3)" }}>{WEEKDAY_LABEL[d.date.getUTCDay()]}</span></td>
-                    <td>{d.isHoliday ? <span className="badge danger xs">Nghỉ lễ</span> : d.isWorkday ? <span className="badge ok xs">Đi làm bù</span> : <span className="badge neutral xs">Nghỉ</span>}</td>
-                    <td>{d.note ?? "—"}</td>
-                    <td className="right"><ActionButton action={removeCalendarDay} fields={{ date: iso }} label="Bỏ" confirm={`Bỏ ngày ngoại lệ ${iso}?`} /></td>
-                  </tr>
-                );
-              })}
-              {days.length === 0 && <tr><td colSpan={4} className="empty">Chưa có ngày ngoại lệ nào trong năm {year}.</td></tr>}
+              {groups.map((g) => (
+                <tr key={g.from}>
+                  <td>
+                    {fmtDay(g.from)}{g.from !== g.to && <> → {fmtDay(g.to)}</>}
+                    <span style={{ color: "var(--text-3)" }}> {WEEKDAY_LABEL[new Date(`${g.from}T00:00:00Z`).getUTCDay()]}{g.from !== g.to && ` → ${WEEKDAY_LABEL[new Date(`${g.to}T00:00:00Z`).getUTCDay()]}`}</span>
+                    {g.count > 1 && <span className="badge neutral xs" style={{ marginLeft: 6 }}>{g.count} ngày</span>}
+                  </td>
+                  <td>{g.isHoliday ? <span className="badge danger xs">Nghỉ lễ</span> : g.isWorkday ? <span className="badge ok xs">Đi làm bù</span> : <span className="badge neutral xs">Nghỉ</span>}</td>
+                  <td>{g.note ?? "—"}</td>
+                  <td className="right"><ActionButton action={removeCalendarDay} fields={{ dateFrom: g.from, dateTo: g.to }} label={g.count > 1 ? "Bỏ cả dải" : "Bỏ"} confirm={`Bỏ ${g.count > 1 ? `${g.count} ngày ngoại lệ ${fmtDay(g.from)} → ${fmtDay(g.to)}` : `ngày ngoại lệ ${fmtDay(g.from)}`}?`} /></td>
+                </tr>
+              ))}
+              {groups.length === 0 && <tr><td colSpan={4} className="empty">Chưa có ngày ngoại lệ nào trong năm {year}.</td></tr>}
             </tbody>
           </table>
         </div>
-      </Section>
-    </>
+      </Section>    </>
   );
 }
 
@@ -214,6 +229,11 @@ async function SalaryTab() {
           <div className="grid2">
             <Field label="Số ngày phép được cộng mỗi tháng" name="daysPerMonth" type="number" defaultValue={leave.daysPerMonth} />
             <Field label="Số tháng thử việc mặc định (chưa tính phép)" name="probationMonths" type="number" defaultValue={leave.probationMonths} />
+            <Field label="Ngày chốt của tháng đầu (vào làm từ ngày này trở về trước = đủ 1 tháng)" name="firstMonthCutoffDay" type="number" defaultValue={leave.firstMonthCutoffDay} />
+            <Field label="Phép của tháng đầu nếu vào làm SAU ngày chốt (ngày)" name="firstMonthPartialDays" type="number" defaultValue={leave.firstMonthPartialDays} />
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 10 }}>
+            Ví dụ: chốt ngày {leave.firstMonthCutoffDay}, vào làm ngày {leave.firstMonthCutoffDay} trở về trước thì tháng đầu tích lũy được phép đủ {leave.daysPerMonth} ngày; vào sau ngày {leave.firstMonthCutoffDay} thì tháng đầu chỉ {leave.firstMonthPartialDays} ngày. Từ tháng tiếp theo tính {leave.daysPerMonth} ngày/tháng bình thường. “Tháng đầu” là tháng đầu tiên được tính phép (sau thử việc).
           </div>
         </ConfigForm>
       </Section>

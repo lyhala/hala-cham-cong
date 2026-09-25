@@ -20,6 +20,8 @@ check("Chấm công: giữ từ 2026-06, xóa trước 01/06", cut.attendanceMon
 check("Mốc xóa bảng công (Date)", cut.attendanceDate.toISOString(), "2026-06-01T00:00:00.000Z");
 check("Mốc xóa log Hanet (0h VN = 17h UTC hôm trước)", cut.attendanceTime.toISOString(), "2026-05-31T17:00:00.000Z");
 check("Đơn từ: giữ từ 2026-06", cut.requestMonth, "2026-06");
+check("Đơn nghỉ phép năm giữ từ đầu năm trước (01/01/2025) để tính phép tồn", cut.annualLeaveKeepFrom.toISOString(), "2025-01-01T00:00:00.000Z");
+check("Qua năm 2027: giữ đơn nghỉ phép năm từ 01/01/2026", retentionCutoffs(config, new Date("2027-01-10T03:00:00Z")).annualLeaveKeepFrom.toISOString(), "2026-01-01T00:00:00.000Z");
 
 // Qua năm: 01/2027 → giữ chấm công từ 10/2026, lương từ 01/2026
 const jan = retentionCutoffs(config, new Date("2027-01-10T03:00:00Z"));

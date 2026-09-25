@@ -29,6 +29,9 @@ export function retentionCutoffs(config: RetentionConfig, now = new Date()) {
     requestMonth,
     requestDate: monthStartDate(requestMonth),
     requestTime: monthStartVN(requestMonth),
+    // Đơn nghỉ PHÉP NĂM được giữ từ đầu năm trước: phép đã nghỉ trong năm là căn cứ tính phép tồn quy đổi ra lương
+    // (phiếu lương tháng 12 tính vào đầu tháng 1 năm sau), nên không thể xóa theo hạn 3 tháng của đơn từ.
+    annualLeaveKeepFrom: new Date(Date.UTC(Number(current.slice(0, 4)) - 1, 0, 1)),
     reportMonth: shiftMonth(current, -config.reportMonths), // tháng cũ nhất còn xem lại được báo cáo
   };
 }
@@ -52,7 +55,7 @@ export type RetentionResult = Record<"payslips" | "attendanceLogs" | "dailyAtten
 /**
  * Xóa dữ liệu quá hạn. dryRun = chỉ đếm, không xóa.
  * Đơn từ: xóa khi đơn được tạo trước mốc VÀ ngày nghỉ/làm thêm trong đơn cũng trước mốc (đơn xin nghỉ cho
- * tương lai không bị xóa sớm). Hệ số phân bổ chỉ xóa trong database — file Google Sheet giữ nguyên.
+ * tương lai không bị xóa sớm). Riêng đơn nghỉ PHÉP NĂM giữ từ đầu năm trước (để tính phép tồn cuối năm). Hệ số phân bổ chỉ xóa trong database — file Google Sheet giữ nguyên.
  */
 export async function runRetention(prisma: PrismaClient, options: { dryRun?: boolean; now?: Date } = {}) {
   const stored = await prisma.setting.findUnique({ where: { key: "retention" } });
@@ -65,6 +68,7 @@ export async function runRetention(prisma: PrismaClient, options: { dryRun?: boo
     dailyAttendance: { date: { lt: cut.attendanceDate } },
     allocations: { month: { lt: cut.allocationMonth } },
     requests: {
+      NOT: { type: "LEAVE" as const, leaveSubtype: "ANNUAL" as const, dateTo: { gte: cut.annualLeaveKeepFrom } },
       createdAt: { lt: cut.requestTime },
       AND: [{ OR: [{ dateFrom: null }, { dateFrom: { lt: cut.requestDate } }] }, { OR: [{ dateTo: null }, { dateTo: { lt: cut.requestDate } }] }],
     },

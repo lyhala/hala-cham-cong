@@ -55,9 +55,12 @@ check("Nhập khung theo thứ tự lộn xộn vẫn được sắp lại", par
 const sp = { mealAllowancePerMonth: "1.250.000", parkingPerDay: "5000", otWeekday: "1,5", otWeekend: "2", otHoliday: "3" };
 check("Tham số lương hợp lệ", parseSalaryParams(form(sp)).value, { mealAllowancePerMonth: 1_250_000, parkingPerDay: 5000, otCoefficients: { weekday: 1.5, weekend: 2, holiday: 3 } });
 check("Hệ số OT bằng 0 bị chặn", has(parseSalaryParams(form({ ...sp, otWeekend: "0" })), "Hệ số OT"), true);
-check("Phép năm hợp lệ", parseLeavePolicy(form({ daysPerMonth: "1", probationMonths: "2" })).value, { daysPerMonth: 1, probationMonths: 2 });
-check("Phép 6 ngày/tháng bị chặn", has(parseLeavePolicy(form({ daysPerMonth: "6", probationMonths: "2" })), "mỗi tháng"), true);
-check("Thử việc 2,5 tháng bị chặn", has(parseLeavePolicy(form({ daysPerMonth: "1", probationMonths: "2.5" })), "thử việc"), true);
+const lv = { daysPerMonth: "1", probationMonths: "2", firstMonthCutoffDay: "10", firstMonthPartialDays: "0,5" };
+check("Phép năm hợp lệ", parseLeavePolicy(form(lv)).value, { daysPerMonth: 1, probationMonths: 2, firstMonthCutoffDay: 10, firstMonthPartialDays: 0.5 });
+check("Ngày chốt 40 bị chặn", has(parseLeavePolicy(form({ ...lv, firstMonthCutoffDay: "40" })), "Ngày chốt"), true);
+check("Phép tháng đầu lớn hơn phép mỗi tháng bị chặn", has(parseLeavePolicy(form({ ...lv, firstMonthPartialDays: "2" })), "Phép tháng đầu"), true);
+check("Phép 6 ngày/tháng bị chặn", has(parseLeavePolicy(form({ ...lv, daysPerMonth: "6" })), "mỗi tháng"), true);
+check("Thử việc 2,5 tháng bị chặn", has(parseLeavePolicy(form({ ...lv, probationMonths: "2.5" })), "thử việc"), true);
 
 // Duyệt đơn / quyền / phiếu lương
 const levels = { level_OT: "2", level_LATE: "1", level_EARLY_LEAVE: "1", level_LEAVE: "1", level_WFH: "1", level_SALARY_ADVANCE: "2" };

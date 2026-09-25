@@ -67,7 +67,7 @@ import { SETTING_DEFAULTS } from "../src/lib/settings";
 const policy = SETTING_DEFAULTS.leavePolicy;
 const acc = (eligibleFrom: string, uptoMonth: number, p = policy) => annualLeaveAccrued({ year: 2026, uptoMonth, eligibleFrom, policy: p });
 
-check("Mặc định: 1 ngày phép/tháng, thử việc 2 tháng", [policy.daysPerMonth, policy.probationMonths], [1, 2]);
+check("Mặc định: 1 ngày phép/tháng, thử việc 2 tháng, chốt tháng đầu ngày 10, vào sau ngày 10 được 0,5", [policy.daysPerMonth, policy.probationMonths, policy.firstMonthCutoffDay, policy.firstMonthPartialDays], [1, 2, 10, 0.5]);
 check("Vào làm 10/11/2025 (thử việc xong từ 2026) → tích lũy từ 01/2026", leaveEligibleFrom("2025-11-10", null, policy), "2026-01");
 check("Vào 15/03/2026, thử việc mặc định 2 tháng → từ tháng thứ 3 (05/2026)", leaveEligibleFrom("2026-03-15", null, policy), "2026-05");
 check("Thử việc 1 tháng → từ 04/2026", leaveEligibleFrom("2026-03-15", 1, policy), "2026-04");
@@ -86,6 +86,19 @@ check("Năm nay tính đến tháng hiện tại (9)", accrualUptoMonth(2026, "2
 check("Năm cũ đã đủ 12 tháng", accrualUptoMonth(2025, "2026-09"), 12);
 check("Năm sau chưa tích lũy", accrualUptoMonth(2027, "2026-09"), 0);
 
+// Tháng ĐẦU được tích lũy: vào làm từ ngày 10 trở về trước → đủ 1; vào sau ngày 10 → 0,5; từ tháng sau tính bình thường
+const accJ = (eligibleFrom: string, uptoMonth: number, joinDay: number | null, p = policy) => annualLeaveAccrued({ year: 2026, uptoMonth, eligibleFrom, policy: p, joinDay });
+check("Vào ngày 5 (trước ngày 10): tháng đầu (05/2026) đủ 1 → đến hết tháng 9 có 5 ngày", accJ("2026-05", 9, 5), 5);
+check("Vào ngày 10 (đúng ngày chốt) vẫn đủ 1", accJ("2026-05", 9, 10), 5);
+check("Vào ngày 11 (sau ngày 10): tháng đầu 0,5 + 4 tháng sau = 4,5", accJ("2026-05", 9, 11), 4.5);
+check("Vào ngày 15: tháng đầu 0,5, đến hết tháng đầu chỉ có 0,5", accJ("2026-05", 5, 15), 0.5);
+check("Vào ngày 15: hết tháng sau (06) = 0,5 + 1 = 1,5", accJ("2026-05", 6, 15), 1.5);
+check("Tháng đầu rơi vào năm trước thì năm nay tính đủ 12 tháng (vào 20/11/2025, hết thử việc từ 12/2025)", accJ("2025-12", 12, 20), 12);
+check("Nhân sự lâu năm / chưa có ngày vào làm: đủ mọi tháng", annualLeaveAccrued({ year: 2026, uptoMonth: 12, eligibleFrom: "0000-01", policy }), 12);
+check("Đổi ngày chốt thành 15: vào ngày 15 vẫn đủ 1, ngày 16 chỉ 0,5", [accJ("2026-05", 5, 15, { ...policy, firstMonthCutoffDay: 15 }), accJ("2026-05", 5, 16, { ...policy, firstMonthCutoffDay: 15 })], [1, 0.5]);
+check("Phép tháng đầu đặt 0 → vào sau ngày chốt không có phép tháng đầu", accJ("2026-05", 5, 20, { ...policy, firstMonthPartialDays: 0 }), 0);
+check("Phép tháng đầu không vượt quá phép mỗi tháng", accJ("2026-05", 5, 20, { ...policy, daysPerMonth: 0.25, firstMonthPartialDays: 0.5 }), 0.25);
+check("Bỏ qua thử việc: tháng đầu là tháng vào làm (vào 20/03 → 03 tính 0,5, 04… 1)", accJ(leaveEligibleFrom("2026-03-20", 0, policy), 5, 20), 2.5);
 const sh = (over: Partial<Parameters<typeof annualLeaveShortage>[0]>) => annualLeaveShortage({ year: 2026, accrued: 9, used: 0, needed: 1, eligibleFrom: "2026-01", leaveFromMonth: "2026-09", uptoMonth: 9, ...over });
 check("Còn phép → cho nghỉ", sh({ used: 8, needed: 1 }), null);
 check("Không dùng thì cộng dồn: nghỉ 9 ngày liền khi đã tích lũy 9 → cho phép", sh({ needed: 9 }), null);

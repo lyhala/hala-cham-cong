@@ -49,6 +49,10 @@ export const SETTING_DEFAULTS = {
   leavePolicy: {
     daysPerMonth: 1,
     probationMonths: 2,
+    // Tháng ĐẦU được tích lũy phép của nhân sự mới: vào làm từ ngày này trở về trước (tính cả ngày này) → đủ 1 tháng (làm tròn thành daysPerMonth);
+    // vào sau ngày này → chỉ được firstMonthPartialDays ngày. Từ tháng tiếp theo tính bình thường.
+    firstMonthCutoffDay: 10,
+    firstMonthPartialDays: 0.5,
   },
 
   // §5 — Duyệt 1 cấp (Leader HOẶC Admin) hay 2 cấp (Leader rồi Admin)

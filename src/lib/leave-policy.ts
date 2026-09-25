@@ -22,12 +22,22 @@ export function leaveEligibleFrom(joinedAt: string | null, probationMonths: numb
   return shiftMonth(joinedAt.slice(0, 7), probationMonths ?? policy.probationMonths);
 }
 
-/** Số ngày phép đã tích lũy trong năm `year` tính đến hết tháng `uptoMonth` (1–12): mỗi tháng đủ điều kiện được `daysPerMonth`. */
-export function annualLeaveAccrued(input: { year: number; uptoMonth: number; eligibleFrom: string; policy: LeavePolicy }) {
-  const { year, uptoMonth, eligibleFrom, policy } = input;
-  let months = 0;
-  for (let m = 1; m <= Math.min(12, uptoMonth); m++) if (`${year}-${String(m).padStart(2, "0")}` >= eligibleFrom) months++;
-  return round2(months * policy.daysPerMonth);
+/**
+ * Số ngày phép đã tích lũy trong năm `year` tính đến hết tháng `uptoMonth` (1–12): mỗi tháng đủ điều kiện được `daysPerMonth`.
+ * Tháng ĐẦU tiên được tích lũy của nhân sự mới (`eligibleFrom`) phụ thuộc ngày vào làm (`joinDay`): vào làm từ ngày
+ * `firstMonthCutoffDay` trở về trước → đủ 1 tháng (làm tròn thành daysPerMonth); vào sau ngày đó → chỉ `firstMonthPartialDays`.
+ * Từ tháng tiếp theo tính bình thường. Không truyền `joinDay` (nhân sự lâu năm / chưa có ngày vào làm) → tính đủ mọi tháng.
+ */
+export function annualLeaveAccrued(input: { year: number; uptoMonth: number; eligibleFrom: string; policy: LeavePolicy; joinDay?: number | null }) {
+  const { year, uptoMonth, eligibleFrom, policy, joinDay } = input;
+  let total = 0;
+  for (let m = 1; m <= Math.min(12, uptoMonth); m++) {
+    const month = `${year}-${String(m).padStart(2, "0")}`;
+    if (month < eligibleFrom) continue;
+    const isFirstMonth = month === eligibleFrom && joinDay != null;
+    total += isFirstMonth && joinDay > policy.firstMonthCutoffDay ? Math.min(policy.firstMonthPartialDays, policy.daysPerMonth) : policy.daysPerMonth;
+  }
+  return round2(total);
 }
 
 /** Tháng (1–12) tính đến đâu của năm `year` tại thời điểm `nowMonth` "YYYY-MM": năm cũ = 12, năm sau = 0, năm nay = tháng hiện tại. */

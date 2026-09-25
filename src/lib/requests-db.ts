@@ -102,7 +102,8 @@ export async function annualLeaveBalances(employeeIds: string[], year: number, u
     const eligibleFrom = leaveEligibleFrom(e.joinedAt ? dayOf(e.joinedAt) : null, e.probationMonths, policy);
     // Phép tích lũy theo chính sách + số Admin điều chỉnh tay (cộng / trừ ngày) trong năm đó
     const adjustment = Math.round((adjusted.get(e.id) ?? 0) * 100) / 100;
-    const accrued = Math.round((annualLeaveAccrued({ year, uptoMonth: upto, eligibleFrom, policy }) + adjustment) * 100) / 100;
+    const joinDay = e.joinedAt ? Number(dayOf(e.joinedAt).slice(8)) : null; // ngày vào làm quyết định phép của tháng đầu (trước / sau ngày 10)
+    const accrued = Math.round((annualLeaveAccrued({ year, uptoMonth: upto, eligibleFrom, policy, joinDay }) + adjustment) * 100) / 100;
     const u = used.get(e.id) ?? { approved: 0, pending: 0 };
     out.set(e.id, {
       year,

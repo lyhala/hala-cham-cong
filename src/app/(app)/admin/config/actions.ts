@@ -10,6 +10,8 @@ import {
   parseRolePermissions, parseSalaryParams, parseSheetLinks, parseWorkSchedule, type Parsed,
 } from "@/lib/config-validate";
 import { isValidMonth } from "@/lib/dates";
+import { daysInRange } from "@/lib/requests";
+import { CALENDAR_KINDS, clearCalendarRange, MAX_RANGE_DAYS, setCalendarRange, type CalendarKind } from "@/lib/calendar-db";
 import { prisma } from "@/lib/db";
 import { SheetsError } from "@/lib/google-sheets";
 import { applyCriteria } from "@/lib/criteria-db";
@@ -94,38 +96,53 @@ export async function saveSheetLinks(_p: ConfigState, fd: FormData): Promise<Con
 
 // ───────────────────────── Lịch làm việc: ngày ngoại lệ ─────────────────────────
 
-const KINDS = { WORK: { isWorkday: true, isHoliday: false }, OFF: { isWorkday: false, isHoliday: false }, HOLIDAY: { isWorkday: false, isHoliday: true } } as const;
 
-/** Thêm / sửa 1 ngày ngoại lệ so với lịch T2–T6: đi làm bù, nghỉ bù, nghỉ lễ. Công của tháng đó tự tính lại. */
+const isDay = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(new Date(`${s}T00:00:00Z`).getTime());
+
+/**
+ * Thêm / sửa ngày ngoại lệ so với lịch T2–T6: nghỉ lễ, nghỉ bù, đi làm bù (VD thứ 7). Chọn được CẢ MỘT DẢI NGÀY
+ * (kỳ nghỉ lễ thường kéo dài vài ngày đến cả tuần) — "Đến ngày" để trống = chỉ 1 ngày. Công của các tháng bị ảnh hưởng tự tính lại.
+ */
 export async function addCalendarDay(_p: ConfigState, fd: FormData): Promise<ConfigState> {
   const admin = await ADMIN_ONLY();
-  const day = String(fd.get("date") ?? "");
-  const kind = String(fd.get("kind") ?? "") as keyof typeof KINDS;
+  const from = String(fd.get("dateFrom") ?? "");
+  const to = String(fd.get("dateTo") ?? "").trim() || from;
+  const kind = String(fd.get("kind") ?? "") as CalendarKind;
   const note = String(fd.get("note") ?? "").trim().slice(0, 100) || null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(new Date(`${day}T00:00:00Z`).getTime())) return { error: "Vui lòng chọn ngày" };
-  if (!(kind in KINDS)) return { error: "Vui lòng chọn loại ngày" };
+  if (!isDay(from)) return { error: "Vui lòng chọn ngày (hoặc ngày bắt đầu của dải ngày)" };
+  if (!isDay(to)) return { error: "Ngày kết thúc không hợp lệ" };
+  if (to < from) return { error: "Ngày kết thúc phải từ ngày bắt đầu trở đi" };
+  if (!(kind in CALENDAR_KINDS)) return { error: "Vui lòng chọn loại ngày" };
+  const count = daysInRange(from, to).length;
+  if (count > MAX_RANGE_DAYS) return { error: `Dải ngày quá dài (tối đa ${MAX_RANGE_DAYS} ngày một lần)` };
 
-  const date = new Date(`${day}T00:00:00Z`);
-  await prisma.workCalendarDay.upsert({ where: { date }, create: { date, ...KINDS[kind], note }, update: { ...KINDS[kind], note } });
-  const recalculated = await recalcMonth(day.slice(0, 7));
-  await logAudit({ actorId: admin.id, action: "config.update", targetType: "WorkCalendarDay", targetId: day, summary: `Đặt ngày ${day} là ${kind === "WORK" ? "ngày làm việc" : kind === "HOLIDAY" ? "ngày lễ" : "ngày nghỉ"}${note ? ` (${note})` : ""}` });
+  const { recalculated } = await setCalendarRange(from, to, kind, note);
+  const days = { length: count };
+  const label = kind === "WORK" ? "ngày làm việc (đi làm bù)" : kind === "HOLIDAY" ? "ngày nghỉ lễ" : "ngày nghỉ";
+  await logAudit({
+    actorId: admin.id,
+    action: "config.update",
+    targetType: "WorkCalendarDay",
+    targetId: from,
+    summary: `Đặt ${days.length === 1 ? `ngày ${from}` : `${days.length} ngày ${from} → ${to}`} là ${label}${note ? ` (${note})` : ""}`,
+  });
   refresh();
   revalidatePath("/admin/attendance");
-  return { ok: true, message: `Đã lưu. Đã tính lại ${recalculated} dòng công của tháng ${day.slice(0, 7)}.` };
+  return { ok: true, message: `Đã lưu ${days.length === 1 ? "1 ngày" : `${days.length} ngày (${from} → ${to})`}. Đã tính lại ${recalculated} dòng công.` };
 }
 
+/** Bỏ ngày ngoại lệ (1 ngày hoặc cả dải ngày) về lịch T2–T6 mặc định. */
 export async function removeCalendarDay(_p: ConfigState, fd: FormData): Promise<ConfigState> {
   const admin = await ADMIN_ONLY();
-  const day = String(fd.get("date") ?? "");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return { error: "Ngày không hợp lệ" };
-  await prisma.workCalendarDay.deleteMany({ where: { date: new Date(`${day}T00:00:00Z`) } });
-  const recalculated = await recalcMonth(day.slice(0, 7));
-  await logAudit({ actorId: admin.id, action: "config.update", targetType: "WorkCalendarDay", targetId: day, summary: `Bỏ ngày ngoại lệ ${day} (về lịch T2–T6 mặc định)` });
+  const from = String(fd.get("dateFrom") ?? "");
+  const to = String(fd.get("dateTo") ?? "").trim() || from;
+  if (!isDay(from) || !isDay(to) || to < from) return { error: "Ngày không hợp lệ" };
+  const { removed, recalculated } = await clearCalendarRange(from, to);
+  await logAudit({ actorId: admin.id, action: "config.update", targetType: "WorkCalendarDay", targetId: from, summary: `Bỏ ${removed} ngày ngoại lệ ${from === to ? from : `${from} → ${to}`} (về lịch T2–T6 mặc định)` });
   refresh();
   revalidatePath("/admin/attendance");
-  return { ok: true, message: `Đã bỏ. Đã tính lại ${recalculated} dòng công.` };
+  return { ok: true, message: `Đã bỏ ${removed} ngày. Đã tính lại ${recalculated} dòng công.` };
 }
-
 /** Tính lại toàn bộ công 1 tháng theo cấu hình giờ làm / bảng phạt hiện tại (bỏ qua ngày Admin đã sửa tay). */
 export async function recalcAttendanceMonth(_p: ConfigState, fd: FormData): Promise<ConfigState> {
   const admin = await ADMIN_ONLY();
