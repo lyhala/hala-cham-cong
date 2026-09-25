@@ -76,7 +76,7 @@ async function WorkTab({ year }: { year: number }) {
           </div>
           <div className="stat-label" style={{ marginTop: 6 }}>Ngày làm việc trong tuần & giờ làm riêng từng thứ</div>
           <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 8, lineHeight: 1.6 }}>
-            Tick thứ có làm việc. Mỗi thứ có thể có giờ riêng — VD <b>thứ 7 chỉ làm sáng</b>: để trống 2 ô buổi chiều. Để trống hết = dùng giờ mặc định ở trên.
+            Tick thứ có làm việc. Mỗi thứ có thể có giờ riêng — VD <b>thứ 7 chỉ làm sáng</b>: đặt buổi chiều <b>12:00 – 12:00</b> (giờ vào = giờ ra nghĩa là không làm buổi đó). Buổi nào không làm cũng đặt như vậy.
             “Số công” là công tính khi đi làm đủ giờ của ngày đó; để trống thì tự tính theo tỷ lệ giờ so với ngày thường (làm sáng 3,5h/7,5h ≈ 0,5 công).
           </div>
           <div className="table-wrap" style={{ marginBottom: 12 }}>
@@ -93,10 +93,11 @@ async function WorkTab({ year }: { year: number }) {
                     <tr key={wd}>
                       <td style={{ whiteSpace: "nowrap" }}>{WEEKDAY_LABEL[wd]}</td>
                       <td><input type="checkbox" name={`work_${wd}`} defaultChecked={on} aria-label={`${WEEKDAY_LABEL[wd]} làm việc`} /></td>
-                      <td><input type="time" name={`ms_${wd}`} defaultValue={custom ? (custom.morningStart ?? "") : schedule.morningStart} /></td>
-                      <td><input type="time" name={`me_${wd}`} defaultValue={custom ? (custom.morningEnd ?? "") : schedule.morningEnd} /></td>
-                      <td><input type="time" name={`as_${wd}`} defaultValue={custom ? (custom.afternoonStart ?? "") : schedule.afternoonStart} /></td>
-                      <td><input type="time" name={`ae_${wd}`} defaultValue={custom ? (custom.afternoonEnd ?? "") : schedule.afternoonEnd} /></td>
+                      {/* Buổi không làm hiện 12:00 – 12:00 (giờ vào = giờ ra) */}
+                      <td><input type="time" name={`ms_${wd}`} defaultValue={custom ? (custom.morningStart ?? "12:00") : schedule.morningStart} /></td>
+                      <td><input type="time" name={`me_${wd}`} defaultValue={custom ? (custom.morningEnd ?? "12:00") : schedule.morningEnd} /></td>
+                      <td><input type="time" name={`as_${wd}`} defaultValue={custom ? (custom.afternoonStart ?? "12:00") : schedule.afternoonStart} /></td>
+                      <td><input type="time" name={`ae_${wd}`} defaultValue={custom ? (custom.afternoonEnd ?? "12:00") : schedule.afternoonEnd} /></td>
                       <td><input name={`unit_${wd}`} inputMode="decimal" defaultValue={custom?.unit ?? ""} placeholder="tự tính" style={{ width: 70 }} /></td>
                       <td style={{ fontSize: 11.5, color: "var(--text-2)", whiteSpace: "nowrap" }}>
                         {on ? `${hours(sample.dayMin)}h · ${sample.unit} công${sample.custom ? " (giờ riêng)" : ""}` : "nghỉ"}

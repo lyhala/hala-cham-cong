@@ -59,7 +59,8 @@ const withOwner = { employee: { select: { id: true, name: true, code: true, team
 export type LeaveBalance = {
   year: number;
   uptoMonth: number; // Tích lũy tính đến hết tháng này của năm (0 = năm chưa bắt đầu)
-  accrued: number; // Phép đã tích lũy
+  accrued: number; // Phép đã tích lũy (gồm cả điều chỉnh của Admin)
+  adjustment: number; // Phần Admin điều chỉnh (+/−) đã nằm trong accrued
   used: number; // Đã nghỉ (đơn đã duyệt)
   pending: number; // Đang chờ duyệt (tạm giữ để không nghỉ vượt)
   remaining: number; // Còn lại = tích lũy − đã nghỉ − đang chờ
@@ -73,7 +74,7 @@ export type LeaveBalance = {
  * Chỉ dùng 3 truy vấn cho cả danh sách nên dùng được ở trang danh sách nhân sự.
  */
 export async function annualLeaveBalances(employeeIds: string[], year: number, uptoMonth?: number) {
-  const [employees, policy, requests, isWork] = await Promise.all([
+  const [employees, policy, requests, isWork, adjustments] = await Promise.all([
     prisma.employee.findMany({ where: { id: { in: employeeIds } }, select: { id: true, joinedAt: true, probationMonths: true } }),
     getSetting("leavePolicy"),
     prisma.request.findMany({
@@ -81,7 +82,10 @@ export async function annualLeaveBalances(employeeIds: string[], year: number, u
       select: { employeeId: true, status: true, dateFrom: true, dateTo: true, dayPortion: true },
     }),
     getDayUnitChecker(`${year}-01-01`, `${year}-12-31`),
+    prisma.leaveAdjustment.findMany({ where: { employeeId: { in: employeeIds }, year }, select: { employeeId: true, days: true } }),
   ]);
+  const adjusted = new Map<string, number>();
+  for (const a of adjustments) adjusted.set(a.employeeId, (adjusted.get(a.employeeId) ?? 0) + a.days);
   const upto = uptoMonth ?? accrualUptoMonth(year, todayVN().slice(0, 7));
   const used = new Map<string, { approved: number; pending: number }>();
   for (const r of requests) {
@@ -96,12 +100,15 @@ export async function annualLeaveBalances(employeeIds: string[], year: number, u
   const out = new Map<string, LeaveBalance>();
   for (const e of employees) {
     const eligibleFrom = leaveEligibleFrom(e.joinedAt ? dayOf(e.joinedAt) : null, e.probationMonths, policy);
-    const accrued = annualLeaveAccrued({ year, uptoMonth: upto, eligibleFrom, policy });
+    // Phép tích lũy theo chính sách + số Admin điều chỉnh tay (cộng / trừ ngày) trong năm đó
+    const adjustment = Math.round((adjusted.get(e.id) ?? 0) * 100) / 100;
+    const accrued = Math.round((annualLeaveAccrued({ year, uptoMonth: upto, eligibleFrom, policy }) + adjustment) * 100) / 100;
     const u = used.get(e.id) ?? { approved: 0, pending: 0 };
     out.set(e.id, {
       year,
       uptoMonth: upto,
       accrued,
+      adjustment,
       used: u.approved,
       pending: u.pending,
       remaining: Math.round((accrued - u.approved - u.pending) * 100) / 100,

@@ -51,12 +51,15 @@ export function parseWorkSchedule(f: Form): Parsed<Defaults["workSchedule"]> {
 
     const times = [str(f, `ms_${d}`), str(f, `me_${d}`), str(f, `as_${d}`), str(f, `ae_${d}`)];
     // Bỏ trống hết giờ = dùng giờ mặc định
-    const [ms, me, as, ae] = times.every((v) => v === "") ? [t.morningStart, t.morningEnd, t.afternoonStart, t.afternoonEnd] : times;
+    let [ms, me, as, ae] = times.every((v) => v === "") ? [t.morningStart, t.morningEnd, t.afternoonStart, t.afternoonEnd] : times;
 
     const filled = (a: string, b: string) => [a, b].filter(Boolean).length;
-    if (filled(ms, me) === 1) return fail(`${label}: buổi sáng phải nhập đủ giờ vào và giờ ra (hoặc để trống cả hai nếu không làm buổi sáng)`);
-    if (filled(as, ae) === 1) return fail(`${label}: buổi chiều phải nhập đủ giờ vào và giờ ra (hoặc để trống cả hai nếu không làm buổi chiều)`);
+    if (filled(ms, me) === 1) return fail(`${label}: buổi sáng phải nhập đủ giờ vào và giờ ra (hoặc đặt giờ vào = giờ ra, VD 12:00 – 12:00, nếu không làm buổi sáng)`);
+    if (filled(as, ae) === 1) return fail(`${label}: buổi chiều phải nhập đủ giờ vào và giờ ra (hoặc đặt giờ vào = giờ ra, VD 12:00 – 12:00, nếu không làm buổi chiều)`);
     if (![ms, me, as, ae].filter(Boolean).every(isTime)) return fail(`${label}: giờ phải có dạng HH:mm`);
+    // Giờ vào = giờ ra (VD 12:00 – 12:00) hoặc để trống cả hai nghĩa là KHÔNG làm buổi đó
+    if (ms === me) [ms, me] = ["", ""];
+    if (as === ae) [as, ae] = ["", ""];
     if (!ms && !as) return fail(`${label}: cần ít nhất 1 buổi làm việc`);
     if (ms && me <= ms) return fail(`${label}: giờ ra buổi sáng phải sau giờ vào`);
     if (as && ae <= as) return fail(`${label}: giờ ra buổi chiều phải sau giờ vào`);

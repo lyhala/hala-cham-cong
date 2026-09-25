@@ -359,6 +359,57 @@ export async function deleteEmployee(_: ActionState, fd: FormData): Promise<Acti
   redirect("/admin/employees");
 }
 
+// ───────────────────────── Điều chỉnh phép năm (§4) ─────────────────────────
+
+/** Admin cộng / trừ ngày phép năm của 1 nhân sự (kèm lý do) — giống sửa công. Cộng vào phép tích lũy của năm đó, tính cả vào phép tồn quy đổi ra lương. */
+export async function addLeaveAdjustment(_: ActionState, fd: FormData): Promise<ActionState> {
+  const admin = await requireRole("ADMIN");
+  const employeeId = String(fd.get("employeeId") ?? "");
+  const year = Number(fd.get("year"));
+  const days = Number(String(fd.get("days") ?? "").trim().replace(",", "."));
+  const note = String(fd.get("note") ?? "").trim();
+
+  if (!Number.isInteger(year) || year < 2000 || year > 2100) return { error: "Năm không hợp lệ" };
+  if (!Number.isFinite(days) || days === 0 || Math.abs(days) > 60) return { error: "Nhập số ngày cộng (số dương) hoặc trừ (số âm), khác 0, tối đa 60 ngày" };
+  if (!note) return { error: "Vui lòng nhập lý do điều chỉnh" };
+  if (note.length > 200) return { error: "Lý do quá dài (tối đa 200 ký tự)" };
+
+  const e = await prisma.employee.findUnique({ where: { id: employeeId } });
+  if (!e) return { error: "Không tìm thấy nhân sự" };
+
+  const rounded = Math.round(days * 100) / 100;
+  await prisma.leaveAdjustment.create({ data: { employeeId, year, days: rounded, note, createdById: admin.id } });
+  await logAudit({
+    actorId: admin.id,
+    action: "leave.adjust",
+    targetType: "Employee",
+    targetId: employeeId,
+    summary: `Điều chỉnh phép năm ${year} của ${e.code} - ${e.name}: ${rounded > 0 ? "+" : ""}${rounded} ngày (${note})`,
+  });
+  refresh();
+  revalidatePath("/requests");
+  return { ok: true, message: `Đã điều chỉnh ${rounded > 0 ? "+" : ""}${rounded} ngày phép năm ${year}` };
+}
+
+export async function deleteLeaveAdjustment(_: ActionState, fd: FormData): Promise<ActionState> {
+  const admin = await requireRole("ADMIN");
+  const id = String(fd.get("id") ?? "");
+  const row = await prisma.leaveAdjustment.findUnique({ where: { id }, include: { employee: true } });
+  if (!row) return { error: "Không tìm thấy điều chỉnh" };
+
+  await prisma.leaveAdjustment.delete({ where: { id } });
+  await logAudit({
+    actorId: admin.id,
+    action: "leave.adjust_delete",
+    targetType: "Employee",
+    targetId: row.employeeId,
+    summary: `Xóa điều chỉnh phép năm ${row.year} của ${row.employee.code} - ${row.employee.name}: ${row.days > 0 ? "+" : ""}${row.days} ngày (${row.note})`,
+  });
+  refresh();
+  revalidatePath("/requests");
+  return { ok: true, message: "Đã xóa điều chỉnh" };
+}
+
 // ───────────────────────── Lịch sử lương (§6.2) ─────────────────────────
 
 export async function addSalaryHistory(_: ActionState, fd: FormData): Promise<ActionState> {

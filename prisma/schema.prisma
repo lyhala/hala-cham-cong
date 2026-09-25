@@ -171,6 +171,8 @@ model Employee {
   pushSubscriptions PushSubscription[]
   auditLogs         AuditLog[]
   settingsUpdated   Setting[]
+  leaveAdjustments  LeaveAdjustment[] @relation("LeaveAdjustmentEmployee")
+  leaveAdjustmentsMade LeaveAdjustment[] @relation("LeaveAdjustmentCreatedBy")
 }
 
 // Ảnh khuôn mặt (dùng cho FaceID Hanet + hiển thị). Lưu thẳng trong DB (đã thu nhỏ, ~100–300KB),
@@ -256,6 +258,21 @@ model DailyAttendance {
 
   @@unique([employeeId, date])
   @@index([date])
+}
+
+// Admin điều chỉnh số phép năm của 1 nhân sự (cộng / trừ ngày) kèm lý do — giống sửa công. Cộng vào phép tích lũy của năm đó (§4)
+model LeaveAdjustment {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation("LeaveAdjustmentEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  year        Int
+  days        Float // Số ngày cộng (+) hoặc trừ (−)
+  note        String
+  createdById String?
+  createdBy   Employee? @relation("LeaveAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([employeeId, year])
 }
 
 // ───────────────────────── Đơn từ (§5) ─────────────────────────

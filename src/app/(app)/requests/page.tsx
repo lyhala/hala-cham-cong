@@ -43,6 +43,7 @@ async function MyRequests({ userId, isAdmin }: { userId: string; isAdmin: boolea
       <div className="subtitle">Tạo, theo dõi và thu hồi đơn</div>
       <div className="info-box">
         Phép năm {leave.year}: còn <b>{leave.remaining}</b> ngày (tích lũy {leave.accrued} đến hết tháng {leave.uptoMonth}
+        {leave.adjustment !== 0 && <>, Admin điều chỉnh {leave.adjustment > 0 ? "+" : ""}{leave.adjustment}</>}
         {leave.used > 0 && <>, đã nghỉ {leave.used}</>}
         {leave.pending > 0 && <>, chờ duyệt {leave.pending}</>})
         {leave.eligibleFrom > `${leave.year}-${String(leave.uptoMonth).padStart(2, "0")}` && <> · đang thử việc, được tính phép từ tháng {leave.eligibleFrom.slice(5)}/{leave.eligibleFrom.slice(0, 4)}</>}

@@ -5,7 +5,9 @@ import { prisma } from "@/lib/db";
 import { todayVN } from "@/lib/dates";
 import { Avatar, photoUrl } from "@/components/Avatar";
 import { fmtDate, fmtMoney, initials, toDateInput } from "@/lib/format";
-import { deleteSalaryHistory } from "../actions";
+import { deleteLeaveAdjustment, deleteSalaryHistory } from "../actions";
+import { annualLeaveBalance } from "@/lib/requests-db";
+import { LeaveAdjustForm } from "../_components/LeaveAdjustForm";
 import { AccountPanel } from "../_components/AccountPanel";
 import { ActionButton } from "../_components/ActionButton";
 import { EmployeeForm } from "../_components/EmployeeForm";
@@ -31,6 +33,12 @@ export default async function EmployeeDetailPage(props: PageProps<"/admin/employ
   if (!e) notFound();
 
   const today = todayVN();
+  const year = Number(today.slice(0, 4));
+  // Phép năm nay: tích lũy (gồm điều chỉnh), đã nghỉ, còn lại — và lịch sử Admin điều chỉnh
+  const [leave, adjustments] = await Promise.all([
+    annualLeaveBalance(e.id, year),
+    prisma.leaveAdjustment.findMany({ where: { employeeId: e.id, year }, orderBy: { createdAt: "desc" }, include: { createdBy: { select: { name: true } } } }),
+  ]);
   // Mốc lương đang hiệu lực = mốc mới nhất có ngày hiệu lực <= hôm nay
   const current = e.salaryHistory.find((s) => toDateInput(s.effectiveFrom) <= today);
   const resigned = e.status === "RESIGNED";
@@ -151,6 +159,40 @@ export default async function EmployeeDetailPage(props: PageProps<"/admin/employ
           </div>
         )}
         <SalaryForm employeeId={e.id} today={today} lastBase={e.salaryHistory[0]?.baseSalary ?? null} lastPerf={e.salaryHistory[0]?.perfSalary ?? null} />
+      </div>
+
+      <div className="section-title" style={{ marginTop: 24 }}>Phép năm {year}</div>
+      <div className="card">
+        <div className="grid3" style={{ marginBottom: 12 }}>
+          <div><div className="stat-label">Còn lại (phép tồn)</div><div className="stat-value" style={{ fontSize: 17 }}>{leave.remaining} ngày</div></div>
+          <div><div className="stat-label">Đã tích lũy đến hết tháng {leave.uptoMonth}</div><div className="stat-value" style={{ fontSize: 17 }}>{leave.accrued}</div></div>
+          <div><div className="stat-label">Đã nghỉ{leave.pending > 0 ? ` (+${leave.pending} chờ duyệt)` : ""}</div><div className="stat-value" style={{ fontSize: 17 }}>{leave.used}</div></div>
+        </div>
+        <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 12, lineHeight: 1.6 }}>
+          Phép tích lũy 1 ngày/tháng từ tháng {leave.eligibleFrom.startsWith("0000") ? "đầu năm" : `${leave.eligibleFrom.slice(5)}/${leave.eligibleFrom.slice(0, 4)}`} (sau thử việc), không nghỉ ứng trước.
+          Phép tồn cuối năm <b>{leave.toPayOut} ngày</b> sẽ được quy đổi ra lương tháng 12.
+          {leave.adjustment !== 0 && <> Trong đó Admin đã điều chỉnh <b>{leave.adjustment > 0 ? "+" : ""}{leave.adjustment} ngày</b>.</>}
+        </div>
+        {adjustments.length > 0 && (
+          <div className="table-wrap" style={{ marginBottom: 12, boxShadow: "none" }}>
+            <table>
+              <thead><tr><th>Ngày</th><th className="right">Số ngày</th><th>Lý do</th><th></th></tr></thead>
+              <tbody>
+                {adjustments.map((a) => (
+                  <tr key={a.id}>
+                    <td style={{ whiteSpace: "nowrap" }}>{a.createdAt.toISOString().slice(0, 10).split("-").reverse().join("/")}</td>
+                    <td className="right"><b style={{ color: a.days < 0 ? "var(--danger)" : "var(--success)" }}>{a.days > 0 ? "+" : ""}{a.days}</b></td>
+                    <td style={{ fontSize: 12, color: "var(--text-2)" }}>{a.note}{a.createdBy && <div style={{ fontSize: 10.5, color: "var(--text-3)" }}>bởi {a.createdBy.name}</div>}</td>
+                    <td>
+                      <ActionButton action={deleteLeaveAdjustment} fields={{ id: a.id }} label="✕" className="icon-btn" title="Xóa điều chỉnh" confirm={`Xóa điều chỉnh ${a.days > 0 ? "+" : ""}${a.days} ngày?`} showResult={false} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <LeaveAdjustForm employeeId={e.id} year={year} />
       </div>
 
       <div className="section-title" style={{ marginTop: 24 }}>Tài khoản đăng nhập</div>
