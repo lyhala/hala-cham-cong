@@ -769,3 +769,90 @@ tbody tr:hover td {
     display: none;
   }
 }
+
+/* ---- Lịch chấm công tháng ---- */
+.cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  text-align: center;
+}
+.cal .dow {
+  font-size: 10.5px;
+  color: var(--text-3);
+  padding-bottom: 4px;
+}
+.cal .day {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.cal .day.ok {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: transparent;
+}
+.cal .day.warn {
+  background: var(--amber-bg);
+  color: var(--amber);
+  border-color: transparent;
+}
+.cal .day.absent {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: transparent;
+}
+.cal .day.off {
+  background: var(--bg);
+  color: var(--text-3);
+  border-color: transparent;
+}
+.cal .day.today {
+  outline: 2px solid var(--navy);
+  font-weight: 700;
+}
+.cal .day.picked {
+  box-shadow: 0 0 0 2px var(--amber) inset;
+}
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.cal-legend i {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.cal-legend i.ok {
+  background: var(--success-bg);
+}
+.cal-legend i.warn {
+  background: var(--amber-bg);
+}
+.cal-legend i.absent {
+  background: var(--danger-bg);
+}
+.cal-legend i.off {
+  background: var(--bg);
+}
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}

@@ -37,3 +37,25 @@ export function dateTimeVN(date: Date) {
     hour12: false,
   }).format(date);
 }
+
+/** Tháng hiện tại (giờ VN) dạng "YYYY-MM". */
+export function currentMonthVN(now = new Date()) {
+  return todayVN(now).slice(0, 7);
+}
+
+export function isValidMonth(s: unknown): s is string {
+  return typeof s === "string" && /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
+}
+
+/** "2026-09" + 1 → "2026-10" */
+export function shiftMonth(month: string, delta: number) {
+  const [y, m] = month.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + delta, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "2026-09" → "Tháng 9, 2026" */
+export function monthLabel(month: string) {
+  const [y, m] = month.split("-").map(Number);
+  return `Tháng ${m}, ${y}`;
+}
