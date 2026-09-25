@@ -13,6 +13,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
+    "check:rules": "tsx scripts/check-attendance-rules.mts",
+    "sim:hanet": "tsx scripts/simulate-hanet.mts",
     "start:railway": "prisma migrate deploy && prisma db seed && next start"
   },
   "dependencies": {
