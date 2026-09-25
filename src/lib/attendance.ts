@@ -305,7 +305,6 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
   }
   const today = todayVN();
   const unitByDay = new Map(calendar.days.map((d) => [d.day, d.unit]));
-  const elapsedWorkdays = Math.round(calendar.days.filter((d) => d.workday && d.day <= today).reduce((s, d) => s + d.unit, 0) * 100) / 100; // tổng công của các ngày làm đã qua
 
   return {
     standardDays: calendar.standardDays,
