@@ -73,7 +73,17 @@ export const SETTING_DEFAULTS = {
   // §7 — Gợi ý loại thưởng (gõ loại mới sẽ tự thêm vào)
   bonusTypeSuggestions: ["2/9", "Tết dương", "Thưởng dự án", "Tết âm", "Thưởng nóng"],
 
-  // §9 — Link các Google Sheet
+  // §17 — Lưu trữ dữ liệu: quá hạn (số tháng) thì job hằng ngày xóa khỏi database (npm run retention)
+  retention: {
+    payslipMonths: 12, // Phiếu lương
+    attendanceMonths: 3, // Log Hanet + bảng công ngày
+    allocationMonths: 12, // Hệ số phân bổ dự án (bản trên Google Sheet không bị xóa)
+    requestMonths: 3, // Đơn từ
+    reportMonths: 12, // Báo cáo Chi phí dự án / theo Team: chỉ cho xem lại tối đa chừng này tháng
+  },
+
+  // §9 — Link các Google Sheet. Mỗi luồng (Bảng lương, Hệ số phân bổ, Chi phí dự án) dùng ĐÚNG 1 file cố định
+  // ở đây; mỗi tháng chỉ thêm tab mới vào file đó (tên tab = "YYYY-MM"), KHÔNG tạo file Sheet mới.
   googleSheets: {
     employeesSheetUrl: null as string | null,
     performanceSheetUrl: null as string | null,

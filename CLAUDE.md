@@ -10,3 +10,5 @@
 - Thao tác nhạy cảm (duyệt đơn, sửa công, sửa lương, cấu hình) phải ghi `logAudit()`.
 - Đổi database: sửa `prisma/schema.prisma` rồi `npm run db:migrate -- --name <tên>`; không sửa migration cũ.
 - Trước khi commit: `npm run typecheck && npm run lint && npm run build`.
+- Lưu trữ dữ liệu (spec §17): job `npm run retention` (cron hằng ngày) xóa dữ liệu quá hạn — cấu hình ở `SETTING_DEFAULTS.retention`, logic ở `src/lib/retention.ts`. Báo cáo chi phí phải gọi `reportMonthAvailability()` trước khi tính.
+- Đồng bộ Google Sheet: mỗi luồng (Bảng lương, Hệ số phân bổ, Chi phí dự án) chỉ dùng 1 file cố định lấy từ `googleSheets` trong cấu hình; mỗi tháng chỉ thêm tab mới `YYYY-MM`, không bao giờ tạo file Sheet mới.
