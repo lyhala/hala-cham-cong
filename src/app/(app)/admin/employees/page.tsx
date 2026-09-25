@@ -153,7 +153,11 @@ async function EmployeeList({ filters }: { filters: Filters }) {
                   <td>{e.role ? ROLE_LABEL[e.role] : <span className="missing">Chưa chọn</span>}</td>
                   <td style={{ whiteSpace: "nowrap", fontSize: 11.5 }}>
                     {e.status === "RESIGNED" ? (
-                      <span className="badge danger">Đã nghỉ</span>
+                      e.isLocked ? (
+                        <span className="badge danger">Đã nghỉ · đã khóa</span>
+                      ) : (
+                        <span className="badge warn">Đã nghỉ · còn xem Lương</span>
+                      )
                     ) : e.isLocked ? (
                       <span className="badge danger">Đã khóa</span>
                     ) : !e.email ? (

@@ -294,10 +294,12 @@ export async function markResigned(_: ActionState, fd: FormData): Promise<Action
   const err = await guardNotSelfOrLastAdmin(admin.id, e);
   if (err) return { error: err };
 
+  // Không khóa / không đăng xuất ngay: nhân sự đã nghỉ vẫn đăng nhập được, nhưng hệ thống tự ép chỉ
+  // vào được /salary (xem phiếu lương cuối) — mọi quyền cũ (kể cả Leader/Admin) hết hiệu lực ngay.
+  // Admin bấm "Khóa tài khoản" khi muốn chặn hẳn, hoặc "Xóa hẳn" sau khi đã trả lương xong.
   await prisma.$transaction([
-    prisma.employee.update({ where: { id }, data: { status: "RESIGNED", leftAt, isLocked: true, isCEO: false } }),
+    prisma.employee.update({ where: { id }, data: { status: "RESIGNED", leftAt, isCEO: false } }),
     prisma.team.updateMany({ where: { leaderId: id }, data: { leaderId: null } }),
-    prisma.session.deleteMany({ where: { employeeId: id } }),
   ]);
   // TODO (module Hanet): tự động gọi API Hanet xóa FaceID
 
@@ -309,7 +311,7 @@ export async function markResigned(_: ActionState, fd: FormData): Promise<Action
     summary: `Đánh dấu nghỉ việc ${e.code} - ${e.name}`,
   });
   refresh();
-  return { ok: true, message: "Đã chuyển sang Đã nghỉ và khóa tài khoản" };
+  return { ok: true, message: "Đã chuyển sang Đã nghỉ. Vẫn đăng nhập được để xem Lương, không thao tác gì khác." };
 }
 
 export async function reactivate(_: ActionState, fd: FormData): Promise<ActionState> {

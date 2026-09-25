@@ -1,11 +1,11 @@
 import "server-only";
 
 import { createHash, randomBytes } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { prisma } from "@/lib/db";
-import type { Role } from "@/generated/prisma/enums";
+import type { EmployeeStatus, Role } from "@/generated/prisma/enums";
 
 export const SESSION_COOKIE = "hala_session";
 const SESSION_DAYS = 30;
@@ -53,6 +53,7 @@ export type CurrentUser = {
   name: string;
   email: string | null;
   role: Role;
+  status: EmployeeStatus;
   teamId: string | null;
   teamName: string | null;
   mustChangePassword: boolean;
@@ -60,7 +61,10 @@ export type CurrentUser = {
 
 /**
  * Người đang đăng nhập, đọc từ DB mỗi request (cache trong 1 request).
- * Trả null nếu chưa đăng nhập, phiên hết hạn, tài khoản bị khóa / đã nghỉ / chưa có role.
+ * Trả null nếu chưa đăng nhập, phiên hết hạn, tài khoản bị khóa / chưa có role.
+ *
+ * Nhân sự ĐÃ NGHỈ vẫn đăng nhập được (chưa bị khóa) — chỉ để xem phiếu lương cuối, không thao tác
+ * gì khác. Quyền hạn cũ (Employee/Leader/Admin) không còn hiệu lực; requireUser() ép về /salary.
  */
 export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
@@ -73,7 +77,7 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   if (!session || session.expiresAt < new Date()) return null;
 
   const e = session.employee;
-  if (e.isLocked || e.status !== "ACTIVE" || !e.role) return null;
+  if (e.isLocked || !e.role) return null;
 
   return {
     id: e.id,
@@ -81,27 +85,46 @@ export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
     name: e.name,
     email: e.email,
     role: e.role,
+    status: e.status,
     teamId: e.teamId,
     teamName: e.team?.name ?? null,
     mustChangePassword: e.mustChangePassword,
   };
 });
 
-/** Dùng trong trang (Server Component): chưa đăng nhập → về /login; chưa đổi mật khẩu lần đầu → /change-password. */
+async function currentPathname() {
+  return (await headers()).get("x-pathname") ?? "";
+}
+
+/** Đường dẫn duy nhất nhân sự đã nghỉ được vào (xem phiếu lương cuối). */
+const RESIGNED_ALLOWED_PATH = "/salary";
+
+/**
+ * Dùng trong trang (Server Component): chưa đăng nhập → về /login; chưa đổi mật khẩu lần đầu →
+ * /change-password; đã nghỉ mà không đứng ở trang Lương → ép về /salary (mọi role cũ đều vậy).
+ */
 export async function requireUser(options: { allowMustChangePassword?: boolean } = {}) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.mustChangePassword && !options.allowMustChangePassword) redirect("/change-password");
+  if (user.status === "RESIGNED") {
+    const pathname = await currentPathname();
+    if (pathname !== RESIGNED_ALLOWED_PATH && !pathname.startsWith(RESIGNED_ALLOWED_PATH + "/")) {
+      redirect(RESIGNED_ALLOWED_PATH);
+    }
+  }
   return user;
 }
 
-/** Dùng trong trang: sai role → về trang chủ của role đó. */
+/** Dùng trong trang: sai role → về trang chủ của role đó. Đã nghỉ thì requireUser() ép về /salary trước khi tới đây. */
 export async function requireRole(...roles: Role[]) {
   const user = await requireUser();
-  if (!roles.includes(user.role)) redirect(homePathFor(user.role));
+  if (!roles.includes(user.role)) redirect(homePathFor(user));
   return user;
 }
 
-export function homePathFor(role: Role) {
-  return role === "ADMIN" ? "/admin" : "/home";
+/** Trang chủ theo role — riêng nhân sự đã nghỉ thì luôn là /salary, dù role cũ là gì. */
+export function homePathFor(user: { role: Role; status?: EmployeeStatus }) {
+  if (user.status === "RESIGNED") return RESIGNED_ALLOWED_PATH;
+  return user.role === "ADMIN" ? "/admin" : "/home";
 }

@@ -4,9 +4,18 @@ import { NextResponse, type NextRequest } from "next/server";
 // Đây chỉ là lớp ngoài cho nhanh; kiểm tra thật (phiên còn hạn, role) nằm ở từng trang / API trên server.
 const PUBLIC_PATHS = ["/login", "/api/health", "/api/webhooks"];
 
+// Header nội bộ mang đường dẫn hiện tại vào Server Component (đọc qua headers() trong session.ts),
+// dùng để biết nhân sự đã nghỉ có đang đứng đúng trang /salary hay không.
+const PATHNAME_HEADER = "x-pathname";
+
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return NextResponse.next();
+
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set(PATHNAME_HEADER, pathname);
+  const withPathname = () => NextResponse.next({ request: { headers: requestHeaders } });
+
+  if (PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"))) return withPathname();
 
   if (!request.cookies.has("hala_session")) {
     if (pathname.startsWith("/api/")) {
@@ -14,7 +23,7 @@ export function proxy(request: NextRequest) {
     }
     return NextResponse.redirect(new URL("/login", request.url));
   }
-  return NextResponse.next();
+  return withPathname();
 }
 
 export const config = {

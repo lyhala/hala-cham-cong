@@ -38,18 +38,21 @@ export async function login(_: FormState, formData: FormData): Promise<FormState
     recordFailure(limitKey);
     return { error: "Email hoặc mật khẩu không đúng." };
   }
-  if (employee.isLocked || employee.status !== "ACTIVE") {
+  if (employee.isLocked) {
     return { error: "Tài khoản đã bị khóa. Vui lòng liên hệ Admin." };
   }
-  if (!employee.role) {
+  const role = employee.role;
+  if (!role) {
     return { error: "Tài khoản chưa được phân quyền (Role). Vui lòng liên hệ Admin." };
   }
+  // Nhân sự đã nghỉ (chưa bị khóa) vẫn đăng nhập được — chỉ để xem phiếu lương cuối,
+  // requireUser() sẽ tự ép về /salary, mọi quyền cũ hết hiệu lực ngay.
 
   clearFailures(limitKey);
   await createSession(employee.id, h.get("user-agent"));
   await prisma.employee.update({ where: { id: employee.id }, data: { lastLoginAt: new Date() } });
 
-  redirect(employee.mustChangePassword ? "/change-password" : homePathFor(employee.role));
+  redirect(employee.mustChangePassword ? "/change-password" : homePathFor({ role, status: employee.status }));
 }
 
 export async function logout() {
@@ -81,5 +84,5 @@ export async function changePassword(_: FormState, formData: FormData): Promise<
   await deleteOtherSessions(user.id);
   await logAudit({ actorId: user.id, action: "auth.change_password", summary: `${user.name} đổi mật khẩu` });
 
-  redirect(homePathFor(user.role));
+  redirect(homePathFor(user));
 }

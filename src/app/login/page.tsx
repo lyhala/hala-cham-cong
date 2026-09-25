@@ -7,7 +7,7 @@ export const metadata = { title: "Đăng nhập — Hala Games" };
 
 export default async function LoginPage() {
   const user = await getCurrentUser();
-  if (user) redirect(user.mustChangePassword ? "/change-password" : homePathFor(user.role));
+  if (user) redirect(user.mustChangePassword ? "/change-password" : homePathFor(user));
 
   return (
     <main className="auth-page">

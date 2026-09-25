@@ -30,9 +30,17 @@ export function AccountPanel({ id, name, hasEmail, isLocked, resigned, isSelf, t
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {!resigned && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {hasEmail ? (
+      {resigned && (
+        <p style={{ fontSize: 12, color: "var(--text-2)", margin: 0 }}>
+          {isLocked
+            ? "Đã khóa — không đăng nhập được nữa."
+            : "Đang nghỉ việc nhưng chưa khóa: vẫn đăng nhập được, chỉ xem Lương, không thao tác gì khác."}
+        </p>
+      )}
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {!resigned &&
+          (hasEmail ? (
             <ActionButton
               action={resetPassword}
               fields={{ id }}
@@ -41,20 +49,22 @@ export function AccountPanel({ id, name, hasEmail, isLocked, resigned, isSelf, t
             />
           ) : (
             <span style={{ fontSize: 12, color: "var(--danger)" }}>Chưa có email — nhập email để nhân sự đăng nhập được.</span>
-          )}
-          <ActionButton
-            action={setLocked}
-            fields={{ id, locked: isLocked ? "0" : "1" }}
-            label={isLocked ? "🔓 Mở khóa tài khoản" : "🔒 Khóa tài khoản"}
-            confirm={isLocked ? undefined : `Khóa tài khoản ${name}? Người này sẽ bị đăng xuất và không đăng nhập được.`}
-          />
-          {!showResign && (
-            <button type="button" className="btn sm danger" onClick={() => setShowResign(true)}>
-              Nghỉ việc
-            </button>
-          )}
-        </div>
-      )}
+          ))}
+        <ActionButton
+          action={setLocked}
+          fields={{ id, locked: isLocked ? "0" : "1" }}
+          label={isLocked ? "🔓 Mở khóa tài khoản" : "🔒 Khóa tài khoản"}
+          confirm={isLocked ? undefined : `Khóa tài khoản ${name}? Người này sẽ bị đăng xuất và không đăng nhập được.`}
+        />
+        {!resigned && !showResign && (
+          <button type="button" className="btn sm danger" onClick={() => setShowResign(true)}>
+            Nghỉ việc
+          </button>
+        )}
+        {resigned && (
+          <ActionButton action={reactivate} fields={{ id }} label="↩︎ Đi làm lại" confirm={`Chuyển ${name} về Đang làm và mở khóa tài khoản?`} />
+        )}
+      </div>
 
       {!resigned && showResign && (
         <form
@@ -69,8 +79,9 @@ export function AccountPanel({ id, name, hasEmail, isLocked, resigned, isSelf, t
           <input type="hidden" name="id" value={id} />
           <div style={{ fontWeight: 600, marginBottom: 8 }}>Đánh dấu {name} đã nghỉ việc</div>
           <ul style={{ fontSize: 12, color: "var(--text-2)", paddingLeft: 18, marginBottom: 10, lineHeight: 1.7 }}>
-            <li>Tự khóa tài khoản đăng nhập, ẩn khỏi danh sách đang làm</li>
-            <li>Vẫn giữ dữ liệu để tính lương tháng cuối; xuất lương xong thì bấm &quot;Xóa hẳn&quot;</li>
+            <li>Vẫn đăng nhập được, nhưng chỉ xem Lương — mọi quyền cũ (kể cả Leader/Admin) hết hiệu lực ngay</li>
+            <li>Muốn chặn truy cập sớm hơn thì bấm thêm &quot;Khóa tài khoản&quot;</li>
+            <li>Xuất lương tháng cuối xong thì bấm &quot;Xóa hẳn&quot; — không cần thiết thì cứ để đó, không tốn tài nguyên đáng kể</li>
             <li>Nhắc việc làm tay: khóa / xóa email công ty của người này</li>
           </ul>
           <div className="field">
@@ -87,12 +98,6 @@ export function AccountPanel({ id, name, hasEmail, isLocked, resigned, isSelf, t
             </button>
           </div>
         </form>
-      )}
-
-      {resigned && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <ActionButton action={reactivate} fields={{ id }} label="↩︎ Đi làm lại" confirm={`Chuyển ${name} về Đang làm và mở khóa tài khoản?`} />
-        </div>
       )}
 
       <form

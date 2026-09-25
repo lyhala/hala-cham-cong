@@ -48,7 +48,8 @@ export default async function EmployeeDetailPage(props: PageProps<"/admin/employ
             {e.isCEO && <span className="badge ok xs">CEO</span>}
             {e.leadsTeam && <span className="badge warn xs">Leader {e.leadsTeam.name}</span>}
             {resigned && <span className="badge danger xs">Đã nghỉ từ {fmtDate(e.leftAt)}</span>}
-            {!resigned && e.isLocked && <span className="badge danger xs">Tài khoản đã khóa</span>}
+            {e.isLocked && <span className="badge danger xs">Tài khoản đã khóa</span>}
+            {resigned && !e.isLocked && <span className="badge warn xs">Còn xem được Lương</span>}
             {!resigned && !e.isLocked && e.email && (
               <span style={{ color: "var(--text-3)" }}>· {e.lastLoginAt ? "đã từng đăng nhập" : "chưa đăng nhập lần nào"}</span>
             )}

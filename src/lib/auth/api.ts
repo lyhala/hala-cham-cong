@@ -19,6 +19,10 @@ export function withAuth<Ctx extends object>(handler: Handler<Ctx>, options: { r
     if (user.mustChangePassword) {
       return NextResponse.json({ error: "Cần đổi mật khẩu trước khi sử dụng" }, { status: 403 });
     }
+    // Nhân sự đã nghỉ chỉ được xem phiếu lương trên giao diện (/salary), không gọi API nào khác
+    if (user.status === "RESIGNED") {
+      return NextResponse.json({ error: "Tài khoản đã nghỉ việc, chỉ xem được Lương" }, { status: 403 });
+    }
     if (options.roles && !options.roles.includes(user.role)) {
       return NextResponse.json({ error: "Không có quyền" }, { status: 403 });
     }

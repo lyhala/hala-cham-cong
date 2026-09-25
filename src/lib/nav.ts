@@ -59,6 +59,11 @@ export const NAV_BY_ROLE: Record<Role, NavGroup[]> = {
   ],
 };
 
+// Menu cho nhân sự ĐÃ NGHỈ (bất kể role cũ là gì) — chỉ còn xem phiếu lương cuối.
+export const RESIGNED_NAV: NavGroup[] = [
+  { items: [{ href: "/salary", label: "Lương", icon: "💰", mobile: true }] },
+];
+
 export const ROLE_LABEL: Record<Role, string> = {
   EMPLOYEE: "Nhân viên",
   LEADER: "Leader",
