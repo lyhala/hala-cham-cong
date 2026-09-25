@@ -1,17 +1,18 @@
 // Performance ↔ Google Sheet (spec §8, §9). Hàm thuần, không đụng DB/mạng để dễ kiểm tra.
 //
 // Leader chấm điểm (0–5) trên Google Sheet, Admin bấm "Sync ngay" để kéo vào hệ thống.
-// Mỗi tháng 1 tab "Performance YYYY-MM" trong file Sheet cố định: cột Mã NV, Nhân sự, Team, rồi mỗi tiêu chí 1 cột
+// File Sheet Performance RIÊNG (không dùng chung file với Bảng lương) để dễ tổng hợp. Mỗi tháng 1 tab "YYYY-MM": cột Mã NV, Nhân sự, Team, rồi mỗi tiêu chí 1 cột
 // (tiêu đề cột = TÊN TIÊU CHÍ, nên tiêu chí đổi tên được ở Cấu hình thì tạo lại tab tháng mới).
 //   Hệ số performance = Σ(điểm tiêu chí × trọng số %) ÷ 5
 
 export const PERF_HEADER = { code: "Mã NV", name: "Nhân sự", team: "Team" } as const;
 
-export const perfTabName = (month: string) => `Performance ${month}`;
+/** Tên tab của tháng — chính là "YYYY-MM" (file Performance riêng nên không cần tiền tố). */
+export const perfTabName = (month: string) => month;
 
 type Criterion = { id: string; name: string };
 
-/** Dựng tab mẫu của 1 tháng: tiêu đề + mỗi nhân sự 1 dòng, các ô điểm để trống cho Leader điền. */
+/** Dựng tab mẫu của 1 tháng: tiêu đề + mỗi nhân sự 1 dòng (đã sắp theo Mã NV), các ô điểm để trống cho Leader điền. */
 export function buildPerfTemplate(criteria: { name: string }[], employees: { code: string; name: string; team: string | null }[]) {
   const header = [PERF_HEADER.code, PERF_HEADER.name, PERF_HEADER.team, ...criteria.map((c) => c.name)];
   return [header, ...employees.map((e) => [e.code, e.name, e.team ?? "", ...criteria.map(() => "")])] as string[][];

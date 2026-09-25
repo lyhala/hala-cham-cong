@@ -42,14 +42,15 @@ check("Nhập khung theo thứ tự lộn xộn vẫn được sắp lại", par
 const sp = { mealAllowancePerMonth: "1.250.000", parkingPerDay: "5000", otWeekday: "1,5", otWeekend: "2", otHoliday: "3" };
 check("Tham số lương hợp lệ", parseSalaryParams(form(sp)).value, { mealAllowancePerMonth: 1_250_000, parkingPerDay: 5000, otCoefficients: { weekday: 1.5, weekend: 2, holiday: 3 } });
 check("Hệ số OT bằng 0 bị chặn", has(parseSalaryParams(form({ ...sp, otWeekend: "0" })), "Hệ số OT"), true);
-check("Phép năm hợp lệ", parseLeavePolicy(form({ daysPerYear: "12", probationMonths: "2" })).value, { daysPerYear: 12, probationMonths: 2 });
-check("Thử việc 2,5 tháng bị chặn", has(parseLeavePolicy(form({ daysPerYear: "12", probationMonths: "2.5" })), "thử việc"), true);
+check("Phép năm hợp lệ", parseLeavePolicy(form({ daysPerMonth: "1", probationMonths: "2" })).value, { daysPerMonth: 1, probationMonths: 2 });
+check("Phép 6 ngày/tháng bị chặn", has(parseLeavePolicy(form({ daysPerMonth: "6", probationMonths: "2" })), "mỗi tháng"), true);
+check("Thử việc 2,5 tháng bị chặn", has(parseLeavePolicy(form({ daysPerMonth: "1", probationMonths: "2.5" })), "thử việc"), true);
 
 // Duyệt đơn / quyền / phiếu lương
 const levels = { level_OT: "2", level_LATE: "1", level_EARLY_LEAVE: "1", level_LEAVE: "1", level_WFH: "1", level_SALARY_ADVANCE: "2" };
 check("Cách duyệt theo loại đơn", parseApprovalLevels(form(levels)).value, { OT: 2, LATE: 1, EARLY_LEAVE: 1, LEAVE: 1, WFH: 1, SALARY_ADVANCE: 2 });
 check("Thiếu 1 loại đơn bị chặn", has(parseApprovalLevels(form({ ...levels, level_WFH: "" })), "mọi loại đơn"), true);
-check("Quyền theo role (tick = bật)", parseRolePermissions(form({ leader_approve: "on", employee_wfh: "on" })).value, { leader: { approve: true, editAttendance: false, viewSalary: false }, employee: { wfh: true, advance: false } });
+check("Quyền theo role (tick = bật)", parseRolePermissions(form({ leader_approve: "on", employee_wfh: "on" })).value, { leader: { approve: true }, employee: { wfh: true, advance: false } });
 check("Dòng phiếu lương (tick = hiện)", parsePayslipLines(form({ line_baseSalary: "on", line_ot: "on" })).value?.baseSalary, true);
 check("Dòng không tick = ẩn", parsePayslipLines(form({ line_baseSalary: "on" })).value?.perfSalary, false);
 
@@ -59,6 +60,8 @@ check("Lưu trữ hợp lệ", parseRetention(form(rt)).value, { payslipMonths: 
 check("Lưu trữ 0 tháng bị chặn", has(parseRetention(form({ ...rt, attendanceMonths: "0" })), "1 đến 120"), true);
 check("Link Sheet hợp lệ + ô trống = chưa dùng", parseSheetLinks(form({ payrollSheetUrl: "https://docs.google.com/spreadsheets/d/abc123/edit", performanceSheetUrl: "" })).value?.performanceSheetUrl, null);
 check("Link không phải Sheet bị chặn", has(parseSheetLinks(form({ payrollSheetUrl: "https://example.com/x" })), "không hợp lệ"), true);
+check("Performance dùng chung file với Bảng lương bị chặn", has(parseSheetLinks(form({ payrollSheetUrl: "https://docs.google.com/spreadsheets/d/AAA/edit", performanceSheetUrl: "https://docs.google.com/spreadsheets/d/AAA/edit#gid=1" })), "cùng 1 file"), true);
+check("Hai file khác nhau thì hợp lệ", parseSheetLinks(form({ payrollSheetUrl: "https://docs.google.com/spreadsheets/d/AAA/edit", performanceSheetUrl: "https://docs.google.com/spreadsheets/d/BBB/edit" })).error, undefined);
 
 // Tiêu chí Performance
 const criteria = (rows: { id?: string; name: string; weight: string; group?: string; remove?: boolean }[]) =>
@@ -73,7 +76,7 @@ check("Xóa hết tiêu chí bị chặn", has(parseCriteria(criteria([{ id: "a"
 // ── Đọc điểm Performance từ Google Sheet ──
 import { buildPerfTemplate, parsePerfSheet, parseScoreCell, perfTabName } from "../src/lib/performance-sheet";
 const crit = [{ id: "c1", name: "Hoàn thành CV" }, { id: "c2", name: "Teamwork" }];
-check("Tên tab theo tháng", perfTabName("2026-09"), "Performance 2026-09");
+check("Tên tab theo tháng = YYYY-MM", perfTabName("2026-09"), "2026-09");
 check("Tab mẫu: tiêu đề + 1 dòng/nhân sự, ô điểm trống", buildPerfTemplate(crit, [{ code: "NV001", name: "A", team: "Joe" }, { code: "NV002", name: "B", team: null }]), [["Mã NV", "Nhân sự", "Team", "Hoàn thành CV", "Teamwork"], ["NV001", "A", "Joe", "", ""], ["NV002", "B", "", "", ""]]);
 check("Điểm '4,5' → 4.5", parseScoreCell("4,5"), 4.5);
 check("Điểm 6 → invalid", parseScoreCell(6), "invalid");
@@ -95,5 +98,10 @@ check("Dòng có điểm sai bị bỏ và báo lỗi rõ", [perf.rows.length, p
 check("Tab thiếu cột tiêu chí thì báo, không lỗi", parsePerfSheet([["Mã NV", "Hoàn thành CV"], ["NV001", 4]], crit).missingCriteria, ["Teamwork"]);
 check("Tab không có tiêu chí nào khớp bị báo", parsePerfSheet([["Mã NV", "Khác"], ["NV001", 4]], crit).errors.length, 1);
 check("Tab sai định dạng bị báo", parsePerfSheet([["a"]], crit).errors.length, 1);
+// ── Thứ tự nhân sự theo mã ở mọi file xuất ──
+import { compareEmployeeCodes, sortByEmployeeCode } from "../src/lib/employee-order";
+check("Sắp theo mã: ADM → NV001 → NV002 → NV010 → NV100 → NV1000", ["NV010", "nv001", "ADM", "NV1000", "NV002", "NV100"].sort(compareEmployeeCodes), ["ADM", "nv001", "NV002", "NV010", "NV100", "NV1000"]);
+check("Không xếp theo tên alphabet", sortByEmployeeCode([{ code: "NV002", name: "An" }, { code: "NV001", name: "Zung" }, { code: "ADM", name: "Minh" }], (x) => x.code).map((x) => x.name), ["Minh", "Zung", "An"]);
+check("Mã giống nhau giữ nguyên thứ tự", compareEmployeeCodes("NV001", "NV001"), 0);
 console.log(failed ? `\n${failed} lỗi` : "\nTất cả đều đúng");
 process.exit(failed ? 1 : 0);

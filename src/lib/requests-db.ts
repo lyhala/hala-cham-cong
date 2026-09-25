@@ -3,7 +3,8 @@ import "server-only";
 import type { Role } from "@/generated/prisma/enums";
 import { logAudit } from "@/lib/audit";
 import { getWorkdayChecker, recalcEmployeeMonth } from "@/lib/attendance";
-import { annualLeaveEntitlement, annualLeaveShortage, leaveEligibleFrom } from "@/lib/leave-policy";
+import { accrualUptoMonth, annualLeaveAccrued, annualLeaveShortage, leaveDaysToPayOut, leaveEligibleFrom } from "@/lib/leave-policy";
+import { todayVN } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { lateExemptionWarning, leaveUnitsInMonth, nextStatusOnApprove, TYPE_LABEL, validateRequest, type RequestInput } from "@/lib/requests";
 import { getSetting } from "@/lib/settings-db";
@@ -55,34 +56,65 @@ export async function approverRole(actor: Actor, req: { employeeId: string; empl
 
 const withOwner = { employee: { select: { id: true, name: true, code: true, team: { select: { name: true, leaderId: true } } } } } as const;
 
+export type LeaveBalance = {
+  year: number;
+  uptoMonth: number; // Tích lũy tính đến hết tháng này của năm (0 = năm chưa bắt đầu)
+  accrued: number; // Phép đã tích lũy
+  used: number; // Đã nghỉ (đơn đã duyệt)
+  pending: number; // Đang chờ duyệt (tạm giữ để không nghỉ vượt)
+  remaining: number; // Còn lại = tích lũy − đã nghỉ − đang chờ
+  toPayOut: number; // Phép tồn sẽ quy đổi ra lương = tích lũy − đã nghỉ (không tính đơn đang chờ)
+  eligibleFrom: string; // Tháng đầu tiên được tích lũy phép
+};
+
 /**
- * Phép năm của nhân sự trong năm (spec §4): được hưởng, đã dùng (đơn đã duyệt), đang chờ duyệt, còn lại.
- * Nhân sự mới phải qua thử việc mới có phép (trừ khi hồ sơ có cờ "Bỏ qua thử việc").
+ * Phép năm của nhiều nhân sự cùng lúc (spec §4): nhân sự chính thức được 1 ngày/tháng, cộng dồn trong năm,
+ * không nghỉ ứng trước; tồn cuối năm quy đổi ra lương. `uptoMonth` mặc định = tháng hiện tại (năm cũ = 12).
+ * Chỉ dùng 3 truy vấn cho cả danh sách nên dùng được ở trang danh sách nhân sự.
  */
-export async function annualLeaveBalance(employeeId: string, year: number) {
-  const [employee, policy, requests, isWork] = await Promise.all([
-    prisma.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { joinedAt: true, skipProbation: true } }),
+export async function annualLeaveBalances(employeeIds: string[], year: number, uptoMonth?: number) {
+  const [employees, policy, requests, isWork] = await Promise.all([
+    prisma.employee.findMany({ where: { id: { in: employeeIds } }, select: { id: true, joinedAt: true, probationMonths: true } }),
     getSetting("leavePolicy"),
     prisma.request.findMany({
-      where: { employeeId, type: "LEAVE", leaveSubtype: "ANNUAL", deletedAt: null, status: { in: ["PENDING", "LEADER_APPROVED", "APPROVED"] }, dateFrom: { lte: new Date(Date.UTC(year, 11, 31)) }, dateTo: { gte: new Date(Date.UTC(year, 0, 1)) } },
-      select: { status: true, dateFrom: true, dateTo: true, dayPortion: true },
+      where: { employeeId: { in: employeeIds }, type: "LEAVE", leaveSubtype: "ANNUAL", deletedAt: null, status: { in: ["PENDING", "LEADER_APPROVED", "APPROVED"] }, dateFrom: { lte: new Date(Date.UTC(year, 11, 31)) }, dateTo: { gte: new Date(Date.UTC(year, 0, 1)) } },
+      select: { employeeId: true, status: true, dateFrom: true, dateTo: true, dayPortion: true },
     }),
     getWorkdayChecker(`${year}-01-01`, `${year}-12-31`),
   ]);
-  const eligibleFrom = leaveEligibleFrom(employee.joinedAt ? dayOf(employee.joinedAt) : null, employee.skipProbation, policy);
-  const entitlement = annualLeaveEntitlement(year, eligibleFrom, policy);
-  let used = 0;
-  let pending = 0;
+  const upto = uptoMonth ?? accrualUptoMonth(year, todayVN().slice(0, 7));
+  const used = new Map<string, { approved: number; pending: number }>();
   for (const r of requests) {
     if (!r.dateFrom || !r.dateTo) continue;
     // leaveUnitsInMonth lọc theo tiền tố ngày nên truyền năm "2026" là đếm cả năm
     const units = leaveUnitsInMonth({ dateFrom: dayOf(r.dateFrom), dateTo: dayOf(r.dateTo), dayPortion: r.dayPortion }, String(year), isWork);
-    if (r.status === "APPROVED") used += units;
-    else pending += units;
+    const cur = used.get(r.employeeId) ?? { approved: 0, pending: 0 };
+    if (r.status === "APPROVED") cur.approved += units;
+    else cur.pending += units;
+    used.set(r.employeeId, cur);
   }
-  return { year, entitlement, used, pending, remaining: Math.round((entitlement - used - pending) * 100) / 100, eligibleFrom };
+  const out = new Map<string, LeaveBalance>();
+  for (const e of employees) {
+    const eligibleFrom = leaveEligibleFrom(e.joinedAt ? dayOf(e.joinedAt) : null, e.probationMonths, policy);
+    const accrued = annualLeaveAccrued({ year, uptoMonth: upto, eligibleFrom, policy });
+    const u = used.get(e.id) ?? { approved: 0, pending: 0 };
+    out.set(e.id, {
+      year,
+      uptoMonth: upto,
+      accrued,
+      used: u.approved,
+      pending: u.pending,
+      remaining: Math.round((accrued - u.approved - u.pending) * 100) / 100,
+      toPayOut: leaveDaysToPayOut(accrued, u.approved),
+      eligibleFrom,
+    });
+  }
+  return out;
 }
 
+export async function annualLeaveBalance(employeeId: string, year: number, uptoMonth?: number) {
+  return (await annualLeaveBalances([employeeId], year, uptoMonth)).get(employeeId)!;
+}
 /** Nhân sự tạo đơn. Trả cảnh báo nếu đơn đi muộn này sẽ không được miễn phạt. */
 export async function createRequest(actor: Actor, input: RequestInput): Promise<Result> {
   const error = validateRequest(input);
@@ -95,18 +127,21 @@ export async function createRequest(actor: Actor, input: RequestInput): Promise<
     if (input.type === "SALARY_ADVANCE" && !perms.employee.advance) return fail("Chức năng tạm ứng lương đang tắt");
   }
 
-  // Nghỉ phép không được vượt phép năm (đã trừ đơn đang chờ duyệt); phần vượt phải xin "Nghỉ không lương"
+  // Nghỉ phép chỉ được dùng phần đã tích lũy đến hết tháng của ngày nghỉ (không nghỉ ứng trước); phần vượt xin "Nghỉ không lương"
   if (input.type === "LEAVE" && input.leaveSubtype === "ANNUAL" && input.dateFrom && input.dateTo) {
     const isWork = await getWorkdayChecker(input.dateFrom, input.dateTo);
     for (const year of new Set([Number(input.dateFrom.slice(0, 4)), Number(input.dateTo.slice(0, 4))])) {
       const needed = leaveUnitsInMonth({ dateFrom: input.dateFrom, dateTo: input.dateTo, dayPortion: input.dayPortion }, String(year), isWork);
       if (needed <= 0) continue;
-      const bal = await annualLeaveBalance(actor.id, year);
-      const shortage = annualLeaveShortage({ year, entitlement: bal.entitlement, used: bal.used + bal.pending, needed, eligibleFrom: bal.eligibleFrom, leaveFromMonth: input.dateFrom!.slice(0, 7) });
+      // Ngày nghỉ đầu / cuối của đơn nằm trong năm này
+      const first = input.dateFrom.startsWith(String(year)) ? input.dateFrom : `${year}-01-01`;
+      const last = input.dateTo.startsWith(String(year)) ? input.dateTo : `${year}-12-31`;
+      const uptoMonth = Number(last.slice(5, 7));
+      const bal = await annualLeaveBalance(actor.id, year, uptoMonth);
+      const shortage = annualLeaveShortage({ year, accrued: bal.accrued, used: bal.used + bal.pending, needed, eligibleFrom: bal.eligibleFrom, leaveFromMonth: first.slice(0, 7), uptoMonth });
       if (shortage) return fail(shortage);
     }
   }
-
   const oneDay = input.type === "OT" || input.type === "LATE" || input.type === "EARLY_LEAVE";
   const created = await prisma.request.create({
     data: {

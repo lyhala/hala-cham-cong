@@ -79,13 +79,13 @@ export function parseSalaryParams(f: Form): Parsed<Defaults["salaryParams"]> {
   return { value: { mealAllowancePerMonth: meal, parkingPerDay: parking, otCoefficients: otCoefficients as { weekday: number; weekend: number; holiday: number } } };
 }
 
-/** Phép năm: số ngày/năm và số tháng thử việc. */
+/** Phép năm: số ngày phép được cộng mỗi tháng (nhân sự chính thức) và số tháng thử việc mặc định. */
 export function parseLeavePolicy(f: Form): Parsed<Defaults["leavePolicy"]> {
-  const daysPerYear = int(f, "daysPerYear", 0, 60);
+  const daysPerMonth = num(f, "daysPerMonth");
   const probationMonths = int(f, "probationMonths", 0, 12);
-  if (daysPerYear === null) return fail("Số ngày phép/năm phải là số nguyên từ 0 đến 60");
+  if (daysPerMonth === null || daysPerMonth < 0 || daysPerMonth > 5) return fail("Số ngày phép mỗi tháng phải từ 0 đến 5");
   if (probationMonths === null) return fail("Số tháng thử việc phải là số nguyên từ 0 đến 12");
-  return { value: { daysPerYear, probationMonths } };
+  return { value: { daysPerMonth, probationMonths } };
 }
 
 export const REQUEST_TYPES: RequestType[] = ["OT", "LATE", "EARLY_LEAVE", "LEAVE", "WFH", "SALARY_ADVANCE"];
@@ -106,7 +106,7 @@ export function parseRolePermissions(f: Form): Parsed<Defaults["rolePermissions"
   const on = (k: string) => str(f, k) === "on";
   return {
     value: {
-      leader: { approve: on("leader_approve"), editAttendance: on("leader_editAttendance"), viewSalary: on("leader_viewSalary") },
+      leader: { approve: on("leader_approve") },
       employee: { wfh: on("employee_wfh"), advance: on("employee_advance") },
     },
   };
@@ -122,6 +122,7 @@ export const PAYSLIP_LINE_LABEL: Record<keyof Defaults["payslipVisibleLines"], s
   parkingAllowance: "Tiền gửi xe",
   latePenalty: "Phạt đi muộn",
   advanceDeduction: "Tạm ứng lương",
+  leavePayout: "Quy đổi phép tồn",
 };
 
 /** Dòng nào hiện trên phiếu lương nhân sự thấy (Thực nhận luôn hiện). BHXH/Thuế/Tổng chi phí không bao giờ hiện. */
@@ -159,13 +160,24 @@ export const SHEET_LABEL: Record<keyof Defaults["googleSheets"], string> = {
   teamCostSheetUrl: "Chi phí theo Team sản xuất",
 };
 
-/** Link file Google Sheet cố định của từng luồng đồng bộ (để trống = chưa dùng). */
+/**
+ * Link file Google Sheet cố định của từng luồng đồng bộ (để trống = chưa dùng).
+ * Mỗi luồng dùng 1 file RIÊNG (VD Performance không dùng chung file với Bảng lương) để dễ tổng hợp — trùng file thì báo lỗi.
+ */
 export function parseSheetLinks(f: Form): Parsed<Defaults["googleSheets"]> {
   const out = {} as Defaults["googleSheets"];
   for (const k of Object.keys(SHEET_LABEL) as (keyof Defaults["googleSheets"])[]) {
     const v = str(f, k);
     if (v && !spreadsheetIdFromUrl(v)) return fail(`Link "${SHEET_LABEL[k]}" không hợp lệ — dán link file Google Sheet (docs.google.com/spreadsheets/d/...)`);
     out[k] = v || null;
+  }
+  const seen = new Map<string, keyof Defaults["googleSheets"]>();
+  for (const k of Object.keys(SHEET_LABEL) as (keyof Defaults["googleSheets"])[]) {
+    const id = out[k] ? spreadsheetIdFromUrl(out[k]!) : null;
+    if (!id) continue;
+    const other = seen.get(id);
+    if (other) return fail(`"${SHEET_LABEL[other]}" và "${SHEET_LABEL[k]}" đang dùng cùng 1 file Google Sheet — mỗi luồng cần 1 file riêng`);
+    seen.set(id, k);
   }
   return { value: out };
 }

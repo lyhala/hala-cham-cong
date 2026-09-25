@@ -35,7 +35,7 @@ export default async function NewEmployeePage() {
           attendanceExempt: false,
           noProject: false,
           parkingOutside: false,
-          skipProbation: false,
+          probationMonths: "",
         }}
       />
     </div>

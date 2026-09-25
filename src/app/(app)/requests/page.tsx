@@ -42,11 +42,11 @@ async function MyRequests({ userId, isAdmin }: { userId: string; isAdmin: boolea
       <h1>Đơn của tôi</h1>
       <div className="subtitle">Tạo, theo dõi và thu hồi đơn</div>
       <div className="info-box">
-        Phép năm {leave.year}: còn <b>{leave.remaining}</b> / {leave.entitlement} ngày
-        {leave.used > 0 && <> · đã nghỉ {leave.used}</>}
-        {leave.pending > 0 && <> · chờ duyệt {leave.pending}</>}
-        {leave.eligibleFrom > `${leave.year}-01` && leave.eligibleFrom <= `${leave.year}-12` && <> · được tính phép từ tháng {leave.eligibleFrom.slice(5)} (hết thời gian thử việc)</>}
-        {leave.entitlement === 0 && leave.eligibleFrom > `${leave.year}-12` && <> · đang thử việc, chưa có phép năm</>}
+        Phép năm {leave.year}: còn <b>{leave.remaining}</b> ngày (tích lũy {leave.accrued} đến hết tháng {leave.uptoMonth}
+        {leave.used > 0 && <>, đã nghỉ {leave.used}</>}
+        {leave.pending > 0 && <>, chờ duyệt {leave.pending}</>})
+        {leave.eligibleFrom > `${leave.year}-${String(leave.uptoMonth).padStart(2, "0")}` && <> · đang thử việc, được tính phép từ tháng {leave.eligibleFrom.slice(5)}/{leave.eligibleFrom.slice(0, 4)}</>}
+        <div style={{ fontSize: 11.5, marginTop: 2, opacity: 0.8 }}>Mỗi tháng được cộng phép, không dùng thì cộng dồn sang tháng sau; không nghỉ ứng trước; phép tồn cuối năm được quy đổi ra lương.</div>
       </div>
       <CreateRequestForm types={types} today={todayVN()} />
       {requests.length === 0 && <div className="card empty">Bạn chưa gửi đơn nào.</div>}

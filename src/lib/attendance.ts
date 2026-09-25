@@ -5,6 +5,7 @@ import { todayVN } from "@/lib/dates";
 import { calcDay, isWorkday, pickExemptDays } from "@/lib/attendance-rules";
 import { daysInRange, LEAVE_LABEL } from "@/lib/requests";
 import { getSetting } from "@/lib/settings-db";
+import { sortByEmployeeCode } from "@/lib/employee-order";
 
 const dayOf = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -275,7 +276,7 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
     prisma.employee.findMany({
       where: employeeWhere,
       orderBy: { code: "asc" },
-      select: { id: true, code: true, name: true, attendanceExempt: true, parkingOutside: true, team: { select: { name: true } } },
+      select: { id: true, code: true, name: true, attendanceExempt: true, parkingOutside: true, leftAt: true, team: { select: { name: true } } },
     }),
     prisma.dailyAttendance.findMany({
       where: { date: { gte, lt } },
@@ -297,7 +298,7 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
 
   return {
     standardDays: calendar.standardDays,
-    rows: employees.map((e) => {
+    rows: sortByEmployeeCode(employees, (e) => e.code).map((e) => {
       const mine = rows.filter((r) => r.employeeId === e.id);
       const excused = pickExemptDays(requestDays.get(e.id) ?? [], config.freeExemptionsPerMonth);
       return {
@@ -307,6 +308,7 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
         team: e.team?.name ?? null,
         exempt: e.attendanceExempt,
         parkingOutside: e.parkingOutside,
+        leftAt: e.leftAt,
         workUnits: e.attendanceExempt ? elapsedWorkdays : Math.round(mine.reduce((s, r) => s + r.workUnits, 0) * 100) / 100,
         lateDays: mine.filter((r) => r.lateMinutes > 0).length,
         latePenalty: mine.reduce((s, r) => (excused.has(r.date.toISOString().slice(0, 10)) ? s : s + r.latePenalty), 0),

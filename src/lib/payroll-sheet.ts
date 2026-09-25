@@ -26,6 +26,7 @@ export type SheetPayslipRow = HrFields & {
   parkingAllowance: number;
   latePenalty: number;
   advanceDeduction: number;
+  leavePayout: number;
   netPay: number;
 };
 
@@ -57,6 +58,7 @@ const SYSTEM_COLUMNS: { header: string; value: (r: SheetPayslipRow) => string | 
   { header: "Tiền gửi xe", value: (r) => r.parkingAllowance },
   { header: "Phạt đi muộn", value: (r) => r.latePenalty },
   { header: "Tạm ứng lương", value: (r) => r.advanceDeduction },
+  { header: "Quy đổi phép tồn", value: (r) => r.leavePayout },
   { header: "Thực nhận", value: (r) => r.netPay },
 ];
 const NET_PAY_INDEX = SYSTEM_COLUMNS.length - 1;

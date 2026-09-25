@@ -133,7 +133,8 @@ model Employee {
   attendanceExempt Boolean @default(false) // Miễn chấm công (§3.2)
   noProject        Boolean @default(false) // Không tham gia dự án → vào Chi phí cố định (§14.2)
   parkingOutside   Boolean @default(false) // Gửi xe ngoài → được 5.000đ/ngày (§6.1)
-  skipProbation    Boolean @default(false) // Trường hợp đặc biệt: bỏ qua thời gian thử việc khi tính phép năm (§4)
+  // Số tháng thử việc của người này (chưa tính phép năm). 0 = bỏ qua thử việc; null = dùng mặc định của công ty (Cấu hình → Lương & phép năm)
+  probationMonths  Int?
 
   // Hanet (§3.1)
   hanetPersonId String? @unique
@@ -327,6 +328,8 @@ model Payslip {
   parkingAllowance Int // Tiền gửi xe
   latePenalty      Int   @default(0)
   advanceDeduction Int   @default(0) // Tạm ứng lương
+  leaveDaysPaidOut Float @default(0) // Số ngày phép tồn quy đổi ra lương (cuối năm / tháng nghỉ việc)
+  leavePayout      Int   @default(0) // Tiền quy đổi phép tồn
   netPay           Int // Thực nhận
 
   // Kế toán điền trên Sheet rồi sync ngược (chỉ Admin thấy)

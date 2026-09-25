@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
+import { sortByEmployeeCode } from "@/lib/employee-order";
 import { addTab, listTabs, readValues, replaceValues, SheetsError } from "@/lib/google-sheets";
 import { buildSheetValues, calcTotalCost, LAST_COLUMN, parseSheetValues, spreadsheetIdFromUrl, type HrFields, type SheetPayslipRow } from "@/lib/payroll-sheet";
 import { getSetting } from "@/lib/settings-db";
@@ -22,11 +23,10 @@ async function payrollSpreadsheetId() {
  */
 export async function exportPayrollToSheet(month: string) {
   const spreadsheetId = await payrollSpreadsheetId();
-  const payslips = await prisma.payslip.findMany({
-    where: { month },
-    include: { employee: { select: { code: true, name: true, team: { select: { name: true } } } } },
-    orderBy: { employee: { code: "asc" } },
-  });
+  const payslips = sortByEmployeeCode(
+    await prisma.payslip.findMany({ where: { month }, include: { employee: { select: { code: true, name: true, team: { select: { name: true } } } } } }),
+    (p) => p.employee.code,
+  ); // thứ tự theo mã NV (ADM → NV001 → NV002...) để đối chiếu / đồng bộ giữa các file
   if (payslips.length === 0) throw new SheetsError(`Chưa có phiếu lương tháng ${month} — hãy bấm "Tính lương" trước.`);
 
   const exists = (await listTabs(spreadsheetId)).includes(month);

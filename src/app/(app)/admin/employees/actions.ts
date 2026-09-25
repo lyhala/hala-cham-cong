@@ -112,6 +112,11 @@ function readEmployeeForm(fd: FormData) {
     role: fd.get("role") ?? "",
   });
   if (!parsed.success) return { error: parsed.error.issues[0].message } as const;
+  // Số tháng thử việc riêng: trống = mặc định công ty, 0 = bỏ qua thử việc
+  const probationRaw = String(fd.get("probationMonths") ?? "").trim();
+  if (probationRaw !== "" && !(/^\d+$/.test(probationRaw) && Number(probationRaw) <= 24)) {
+    return { error: "Số tháng thử việc phải là số nguyên từ 0 đến 24 (để trống = mặc định của công ty)" } as const;
+  }
   return {
     data: {
       ...parsed.data,
@@ -120,7 +125,7 @@ function readEmployeeForm(fd: FormData) {
       attendanceExempt: fd.get("attendanceExempt") === "on",
       noProject: fd.get("noProject") === "on",
       parkingOutside: fd.get("parkingOutside") === "on",
-      skipProbation: fd.get("skipProbation") === "on",
+      probationMonths: probationRaw === "" ? null : Number(probationRaw),
     },
     confirmReplace: fd.get("confirmReplaceLeader") === "1",
   } as const;

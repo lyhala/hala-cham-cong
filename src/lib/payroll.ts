@@ -21,6 +21,7 @@ export type PayrollInput = {
   parkingOutside: boolean; // Gửi xe ngoài → được tiền gửi xe
   latePenalty: number; // Tổng phạt đi muộn tháng, đã trừ các ngày được miễn
   advanceDeduction: number; // Tạm ứng lương trong tháng
+  leavePayoutDays: number; // Số ngày phép tồn quy đổi ra lương (tháng 12 / tháng nghỉ việc), 0 nếu không phải
 };
 
 export type PayrollResult = {
@@ -40,11 +41,13 @@ export type PayrollResult = {
   parkingAllowance: number; // Tiền gửi xe
   latePenalty: number;
   advanceDeduction: number;
+  leaveDaysPaidOut: number; // Số ngày phép tồn được quy đổi
+  leavePayout: number; // Tiền quy đổi phép tồn
   netPay: number; // Thực nhận
 };
 
 /**
- * Thực nhận = Lương theo tổng công + Performance thực + Hỗ trợ cơm + Tiền gửi xe − Phạt đi muộn − Tạm ứng
+ * Thực nhận = Lương theo tổng công + Performance thực + Hỗ trợ cơm + Tiền gửi xe + Phép tồn quy đổi − Phạt đi muộn − Tạm ứng
  *  - Công thực = công chấm công + phép năm + nghỉ hưởng lương khác (không vượt ngày công tháng)
  *  - Lương theo tổng công = base × Tổng công ÷ Ngày công tháng (Tổng công = Công thực + Công OT)
  *  - Hỗ trợ cơm và Tiền gửi xe tính theo Công thực (không tính OT)
@@ -58,7 +61,9 @@ export function calcPayslip(input: PayrollInput, params: SalaryParams): PayrollR
   const perfActual = Math.round(input.perfSalary * input.perfCoefficient);
   const mealAllowance = std > 0 ? Math.round((params.mealAllowancePerMonth / std) * actual) : 0;
   const parkingAllowance = input.parkingOutside ? Math.round(params.parkingPerDay * actual) : 0;
-  const netPay = salaryByUnits + perfActual + mealAllowance + parkingAllowance - input.latePenalty - input.advanceDeduction;
+  // Phép tồn quy đổi = lương base ÷ ngày công chuẩn của tháng × số ngày phép tồn
+  const leavePayout = std > 0 ? Math.round((input.baseSalary / std) * input.leavePayoutDays) : 0;
+  const netPay = salaryByUnits + perfActual + mealAllowance + parkingAllowance + leavePayout - input.latePenalty - input.advanceDeduction;
 
   return {
     standardWorkDays: std,
@@ -77,6 +82,8 @@ export function calcPayslip(input: PayrollInput, params: SalaryParams): PayrollR
     parkingAllowance,
     latePenalty: input.latePenalty,
     advanceDeduction: input.advanceDeduction,
+    leaveDaysPaidOut: input.leavePayoutDays,
+    leavePayout,
     netPay,
   };
 }

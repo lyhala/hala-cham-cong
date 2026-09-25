@@ -53,11 +53,12 @@ function Slip({ month, data: d, visible }: { month: string; data: PayrollResult;
     ["Công thực", `${d.actualWorkUnits} / ${d.standardWorkDays} ngày`, visible.workUnits],
     ["OT", d.otHours ? `${d.otHours} giờ (${d.otUnits} công)` : "—", visible.ot],
   ];
-  const money: [string, number, string, boolean][] = [
+  const money: [string, number, string, boolean][] = [   // [tên, số tiền, dấu, có hiện không]
     ["Lương theo công", d.salaryByUnits, "+", true],
     ["Performance thực", d.perfActual, "+", true],
     ["Hỗ trợ cơm", d.mealAllowance, "+", visible.mealAllowance],
     ["Tiền gửi xe", d.parkingAllowance, "+", visible.parkingAllowance],
+    ["Quy đổi phép tồn", d.leavePayout ?? 0, "+", visible.leavePayout],
     ["Phạt đi muộn", d.latePenalty, "−", visible.latePenalty],
     ["Tạm ứng lương", d.advanceDeduction, "−", visible.advanceDeduction],
   ];
@@ -79,8 +80,8 @@ function Slip({ month, data: d, visible }: { month: string; data: PayrollResult;
       <div className="section-title">Chi tiết khoản</div>
       <table>
         <tbody>
-          {/* Khoản cộng luôn hiện (kể cả 0đ); khoản trừ bằng 0 thì ẩn cho gọn */}
-          {money.filter(([, amount, sign, show]) => show && (sign === "+" || amount !== 0)).map(([name, amount, sign]) => (
+          {/* Khoản cộng luôn hiện (kể cả 0đ); khoản trừ và phép tồn quy đổi bằng 0 thì ẩn cho gọn */}
+          {money.filter(([name, amount, sign, show]) => show && (amount !== 0 || (sign === "+" && name !== "Quy đổi phép tồn"))).map(([name, amount, sign]) => (
             <tr key={name}>
               <td>{name}</td>
               <td className="right" style={{ color: sign === "−" ? "var(--danger)" : undefined }}>{sign === "−" && amount ? "−" : ""}{fmtMoney(amount)}đ</td>

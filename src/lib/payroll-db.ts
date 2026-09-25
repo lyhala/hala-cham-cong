@@ -8,13 +8,14 @@ import { calcOtUnits, calcPayslip, calcPerfCoefficient, type PayrollResult, type
 import { calcTotalCost } from "@/lib/payroll-sheet";
 import { shiftMonth } from "@/lib/dates";
 import { hoursBetween, leaveUnitsInMonth, otDayKind } from "@/lib/requests";
+import { annualLeaveBalances } from "@/lib/requests-db";
 import { getSetting } from "@/lib/settings-db";
 
 // Cột số liệu của phiếu lương — dùng cho cả bản tính (Payslip) lẫn bản đã gửi cho nhân sự (publishedData).
 export const PAYSLIP_FIELDS = [
   "standardWorkDays", "baseSalary", "perfSalary", "perfCoefficient", "annualLeaveUsed", "unpaidLeaveDays",
   "actualWorkUnits", "otHours", "otUnits", "totalUnits", "salaryByUnits", "perfActual",
-  "mealAllowance", "parkingAllowance", "latePenalty", "advanceDeduction", "netPay",
+  "mealAllowance", "parkingAllowance", "latePenalty", "advanceDeduction", "leaveDaysPaidOut", "leavePayout", "netPay",
 ] as const satisfies readonly (keyof PayrollResult)[];
 
 export function pickPayslipFields(p: PayrollResult): PayrollResult {
@@ -30,7 +31,8 @@ const monthEnd = (month: string) => {
 export function needsSend(p: { publishedData: unknown } & Partial<Record<keyof PayrollResult, unknown>>) {
   if (!p.publishedData) return true;
   const published = p.publishedData as Partial<PayrollResult>;
-  return PAYSLIP_FIELDS.some((k) => published[k] !== p[k]);
+  // Phiếu đã gửi từ trước khi có cột mới (thiếu khóa) coi như 0 để không báo "cần gửi lại" oan
+  return PAYSLIP_FIELDS.some((k) => (published[k] ?? 0) !== (p[k] ?? 0));
 }
 
 export type CalcSummary = { calculated: number; missingSalary: { code: string; name: string }[] };
@@ -53,6 +55,9 @@ export async function calculateMonth(month: string, employeeId?: string): Promis
   const people = summaries.rows.filter((r) => !employeeId || r.id === employeeId);
   const ids = people.map((p) => p.id);
   const adjustments = await requestAdjustments(month, ids, calendar, params);
+  // Phép tồn quy đổi ra lương: phiếu tháng 12 (hết năm) và phiếu tháng nhân sự nghỉ việc
+  const payoutIds = people.filter((p) => month.endsWith("-12") || (p.leftAt && p.leftAt.toISOString().slice(0, 7) === month)).map((p) => p.id);
+  const leave = payoutIds.length ? await annualLeaveBalances(payoutIds, Number(month.slice(0, 4)), Number(month.slice(5))) : new Map<string, { toPayOut: number }>();
 
   const [history, scores] = await Promise.all([
     prisma.salaryHistory.findMany({
@@ -86,6 +91,7 @@ export async function calculateMonth(month: string, employeeId?: string): Promis
         attendanceUnits: p.workUnits,
         parkingOutside: p.parkingOutside,
         latePenalty: p.latePenalty,
+        leavePayoutDays: leave.get(p.id)?.toPayOut ?? 0,
         ...(adjustments.get(p.id) ?? NO_ADJUSTMENTS),
       },
       params,

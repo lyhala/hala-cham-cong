@@ -89,7 +89,7 @@ export default async function EmployeeDetailPage(props: PageProps<"/admin/employ
           attendanceExempt: e.attendanceExempt,
           noProject: e.noProject,
           parkingOutside: e.parkingOutside,
-          skipProbation: e.skipProbation,
+          probationMonths: e.probationMonths == null ? "" : String(e.probationMonths),
         }}
       />
 

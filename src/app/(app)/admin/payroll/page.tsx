@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { currentMonthVN, isValidMonth, monthLabel, shiftMonth } from "@/lib/dates";
 import { prisma } from "@/lib/db";
+import { sortByEmployeeCode } from "@/lib/employee-order";
 import { fmtMoney } from "@/lib/format";
 import { needsSend } from "@/lib/payroll-db";
 import { serviceAccountEmail } from "@/lib/google-sheets";
@@ -16,11 +17,10 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
   const thisMonth = currentMonthVN();
   const month = isValidMonth(sp.month) ? sp.month : thisMonth;
 
-  const payslips = await prisma.payslip.findMany({
-    where: { month },
-    include: { employee: { select: { id: true, code: true, name: true, status: true } } },
-    orderBy: { employee: { code: "asc" } },
-  });
+  const payslips = sortByEmployeeCode(
+    await prisma.payslip.findMany({ where: { month }, include: { employee: { select: { id: true, code: true, name: true, status: true } } } }),
+    (p) => p.employee.code,
+  );
   const pending = payslips.filter((p) => needsSend(p)).length;
   const totalNet = payslips.reduce((s, p) => s + p.netPay, 0);
   const withCost = payslips.filter((p) => p.totalCost != null);
@@ -109,6 +109,7 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
               <th className="right">Gửi xe</th>
               <th className="right">Phạt muộn</th>
               <th className="right">Tạm ứng</th>
+              <th className="right">Quy đổi phép</th>
               <th className="right">Thực nhận</th>
               <th className="right">BHXH (NLĐ)</th>
               <th className="right">BHXH (cty)</th>
@@ -143,6 +144,7 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
                   <td className="right">{p.parkingAllowance ? fmtMoney(p.parkingAllowance) : "—"}</td>
                   <td className="right">{p.latePenalty ? fmtMoney(p.latePenalty) : "—"}</td>
                   <td className="right">{p.advanceDeduction ? fmtMoney(p.advanceDeduction) : "—"}</td>
+                  <td className="right">{p.leavePayout ? fmtMoney(p.leavePayout) : "—"}</td>
                   <td className="right"><b>{fmtMoney(p.netPay)}</b></td>
                   <td className="right">{p.bhxhEmployee != null ? fmtMoney(p.bhxhEmployee) : "—"}</td>
                   <td className="right">{p.bhxhCompany != null ? fmtMoney(p.bhxhCompany) : "—"}</td>
@@ -162,7 +164,7 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
             })}
             {payslips.length === 0 && (
               <tr>
-                <td colSpan={22}className="empty">Chưa có phiếu lương tháng này. Bấm “Tính lương tháng này”. Nhân sự cần có mức lương trong hồ sơ.</td>
+                <td colSpan={23} className="empty">Chưa có phiếu lương tháng này. Bấm “Tính lương tháng này”. Nhân sự cần có mức lương trong hồ sơ.</td>
               </tr>
             )}
           </tbody>

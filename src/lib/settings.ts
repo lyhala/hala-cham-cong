@@ -32,9 +32,10 @@ export const SETTING_DEFAULTS = {
     otCoefficients: { weekday: 1.5, weekend: 2, holiday: 3 },
   },
 
-  // §4 — Phép năm: 12 ngày/năm; nhân sự mới phải qua thử việc (số tháng) mới được tính phép — từ tháng thứ 3 nếu thử việc 2 tháng
+  // §4 — Phép năm: nhân sự chính thức được 1 ngày/tháng, cộng dồn, không nghỉ ứng trước; tồn cuối năm quy đổi ra lương.
+  // probationMonths = số tháng thử việc mặc định (chưa tích lũy phép); từng nhân sự có thể đặt số tháng riêng (0 = bỏ qua thử việc)
   leavePolicy: {
-    daysPerYear: 12,
+    daysPerMonth: 1,
     probationMonths: 2,
   },
 
@@ -50,7 +51,7 @@ export const SETTING_DEFAULTS = {
 
   // §2 — Bật/tắt quyền & nút chức năng theo role
   rolePermissions: {
-    leader: { approve: true, editAttendance: true, viewSalary: false },
+    leader: { approve: true },
     employee: { wfh: false, advance: true },
   },
 
@@ -65,6 +66,7 @@ export const SETTING_DEFAULTS = {
     parkingAllowance: true,
     latePenalty: true,
     advanceDeduction: true,
+    leavePayout: true,
   },
 
   // §11 — Giao diện

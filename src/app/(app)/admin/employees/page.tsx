@@ -2,6 +2,9 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth/session";
 import { prisma } from "@/lib/db";
 import { Avatar } from "@/components/Avatar";
+import { sortByEmployeeCode } from "@/lib/employee-order";
+import { todayVN } from "@/lib/dates";
+import { annualLeaveBalances } from "@/lib/requests-db";
 import { ROLE_LABEL } from "@/lib/nav";
 import type { Prisma } from "@/generated/prisma/client";
 import { removeFromTeam } from "./actions";
@@ -75,16 +78,19 @@ async function EmployeeList({ filters }: { filters: Filters }) {
   else if (role === "EMPLOYEE" || role === "LEADER" || role === "ADMIN") and.push({ role });
   if (ACCOUNT_FILTERS[account]) and.push(ACCOUNT_FILTERS[account].where);
 
-  const [list, resignedCount, teams] = await Promise.all([
+  const [rawList, resignedCount, teams] = await Promise.all([
     prisma.employee.findMany({
       where: { AND: and },
       include: { team: true, photo: { select: { updatedAt: true } } },
-      orderBy: { code: "asc" },
     }),
     prisma.employee.count({ where: { status: "RESIGNED" } }),
     prisma.team.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
   ]);
   const filtered = Boolean(q || team || role || account);
+  const list = sortByEmployeeCode(rawList, (e) => e.code); // theo mã NV (ADM → NV001 → NV002...)
+  // Phép tồn năm nay (đã tích lũy − đã nghỉ − đang chờ duyệt), tính 1 lần cho cả danh sách
+  const year = Number(todayVN().slice(0, 4));
+  const leave = await annualLeaveBalances(list.filter((e) => e.status === "ACTIVE").map((e) => e.id), year);
 
   return (
     <>
@@ -133,6 +139,7 @@ async function EmployeeList({ filters }: { filters: Filters }) {
                 <th>Tên</th>
                 <th>Team</th>
                 <th>Role</th>
+                <th className="right" title="Phép năm đã tích lũy trừ phép đã nghỉ và đang chờ duyệt. Tồn cuối năm được quy đổi ra lương.">Phép tồn {year}</th>
                 <th>Tài khoản</th>
               </tr>
             </thead>
@@ -151,6 +158,14 @@ async function EmployeeList({ filters }: { filters: Filters }) {
                   </td>
                   <td>{e.team ? <span className="badge neutral">{e.team.name}</span> : <span className="missing">Chưa chọn</span>}</td>
                   <td>{e.role ? ROLE_LABEL[e.role] : <span className="missing">Chưa chọn</span>}</td>
+                  <td className="right" style={{ whiteSpace: "nowrap" }}>
+                    {(() => {
+                      const b = leave.get(e.id);
+                      if (!b) return "—";
+                      if (b.accrued === 0 && b.eligibleFrom > `${year}-${String(b.uptoMonth).padStart(2, "0")}`) return <span className="badge neutral xs" title={`Thử việc, tính phép từ tháng ${b.eligibleFrom.slice(5)}/${b.eligibleFrom.slice(0, 4)}`}>Thử việc</span>;
+                      return <b title={`Tích lũy ${b.accrued} · đã nghỉ ${b.used}${b.pending ? ` · chờ duyệt ${b.pending}` : ""}`}>{b.remaining}</b>;
+                    })()}
+                  </td>
                   <td style={{ whiteSpace: "nowrap", fontSize: 11.5 }}>
                     {e.status === "RESIGNED" ? (
                       e.isLocked ? (

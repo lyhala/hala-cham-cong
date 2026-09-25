@@ -1,6 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/db";
+import { sortByEmployeeCode } from "@/lib/employee-order";
 import { addTab, listTabs, readValues, replaceValues, SheetsError } from "@/lib/google-sheets";
 import { columnLetter, spreadsheetIdFromUrl } from "@/lib/payroll-sheet";
 import { buildPerfTemplate, parsePerfSheet, perfTabName } from "@/lib/performance-sheet";
@@ -12,6 +13,9 @@ async function perfSpreadsheetId() {
   if (!performanceSheetUrl) throw new SheetsError("Chưa nhập link file Google Sheet Performance (Cấu hình → Hệ thống).");
   const id = spreadsheetIdFromUrl(performanceSheetUrl);
   if (!id) throw new SheetsError("Link Google Sheet Performance không hợp lệ.");
+  // Performance dùng file riêng — chặn nhầm sang file Bảng lương (tab tháng sẽ đè lên nhau)
+  const { payrollSheetUrl } = await getSetting("googleSheets");
+  if (payrollSheetUrl && spreadsheetIdFromUrl(payrollSheetUrl) === id) throw new SheetsError("File Performance đang trùng file Bảng lương — hãy dùng 1 file Google Sheet riêng cho Performance (Cấu hình → Google Sheet & lưu trữ).");
   return id;
 }
 
@@ -26,10 +30,11 @@ export async function createPerfTab(month: string) {
   const tab = perfTabName(month);
   if ((await listTabs(spreadsheetId)).includes(tab)) return { created: false as const, tab };
 
-  const [criteria, employees] = await Promise.all([
+  const [criteria, employeeRows] = await Promise.all([
     orderedCriteria(),
-    prisma.employee.findMany({ where: { status: "ACTIVE" }, orderBy: { code: "asc" }, select: { code: true, name: true, team: { select: { name: true } } } }),
+    prisma.employee.findMany({ where: { status: "ACTIVE" }, select: { code: true, name: true, team: { select: { name: true } } } }),
   ]);
+  const employees = sortByEmployeeCode(employeeRows, (e) => e.code); // theo mã NV, giống mọi file xuất khác
   await addTab(spreadsheetId, tab);
   const values = buildPerfTemplate(criteria, employees.map((e) => ({ code: e.code, name: e.name, team: e.team?.name ?? null })));
   await replaceValues(spreadsheetId, tab, `A1:${columnLetter(2 + criteria.length)}`, values);

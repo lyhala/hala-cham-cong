@@ -181,11 +181,11 @@ async function SalaryTab() {
           </div>
         </ConfigForm>
       </Section>
-      <Section title="Phép năm" hint="Nhân sự làm từ đầu năm được đủ số ngày phép của cả năm. Nhân sự mới vào phải qua thời gian thử việc mới tính phép: tháng vào làm là tháng thứ 1, nên thử việc 2 tháng thì từ tháng thứ 3 mới tính. Trường hợp đặc biệt bật cờ “Bỏ qua thử việc” trong hồ sơ nhân sự.">
+      <Section title="Phép năm" hint="Nhân sự chính thức (sau thử việc) được cộng phép mỗi tháng, không dùng thì cộng dồn sang tháng sau, không được nghỉ ứng trước. Phép tồn cuối năm được quy đổi ra lương (tính vào phiếu lương tháng 12) nên mỗi năm tích lũy lại từ đầu. Tháng vào làm là tháng thứ 1 của thử việc: thử việc 2 tháng thì từ tháng thứ 3 mới tính phép. Số tháng thử việc mặc định ở đây; từng nhân sự có thể đặt riêng trong hồ sơ (điền 0 = bỏ qua thử việc).">
         <ConfigForm action={saveLeavePolicy}>
           <div className="grid2">
-            <Field label="Số ngày phép mỗi năm" name="daysPerYear" type="number" defaultValue={leave.daysPerYear} />
-            <Field label="Số tháng thử việc (chưa tính phép)" name="probationMonths" type="number" defaultValue={leave.probationMonths} />
+            <Field label="Số ngày phép được cộng mỗi tháng" name="daysPerMonth" type="number" defaultValue={leave.daysPerMonth} />
+            <Field label="Số tháng thử việc mặc định (chưa tính phép)" name="probationMonths" type="number" defaultValue={leave.probationMonths} />
           </div>
         </ConfigForm>
       </Section>
@@ -225,8 +225,7 @@ async function ApprovalTab() {
         <ConfigForm action={saveRolePermissions}>
           <div className="stat-label">Leader</div>
           <Check name="leader_approve" label="Được duyệt đơn của team mình" defaultChecked={perms.leader.approve} />
-          <Check name="leader_editAttendance" label="Sửa chấm công team mình" hint="Chức năng này chưa có trên giao diện — hiện chỉ Admin sửa được." defaultChecked={perms.leader.editAttendance} />
-          <Check name="leader_viewSalary" label="Xem lương team mình" hint="Chưa có trên giao diện." defaultChecked={perms.leader.viewSalary} />
+          <small style={{ display: "block", color: "var(--text-3)", fontSize: 11.5, marginBottom: 6 }}>Leader không sửa được chấm công và không xem lương (chỉ Admin; Leader xem số liệu tổng hợp trên file Google Sheet).</small>
           <div className="stat-label" style={{ marginTop: 10 }}>Nhân viên</div>
           <Check name="employee_wfh" label="Hiện nút xin WFH" defaultChecked={perms.employee.wfh} />
           <Check name="employee_advance" label="Hiện nút xin tạm ứng lương" defaultChecked={perms.employee.advance} />
@@ -283,7 +282,7 @@ async function PerfTab() {
         </ConfigForm>
       </Section>
 
-      <Section title="Chấm điểm trên Google Sheet" hint={<>Mỗi tháng 1 tab <b>Performance YYYY-MM</b> trong file cố định (link ở tab “Google Sheet & lưu trữ”). 1) Bấm <b>Tạo tab tháng</b> → có sẵn danh sách nhân sự và cột từng tiêu chí. 2) Leader điền điểm 0–5. 3) Bấm <b>Sync ngay</b> → hệ thống lưu điểm (ô để trống = xóa điểm cũ). Tab đã có thì không bị ghi đè. Điểm chưa có thì hệ số performance = 0.</>}>
+      <Section title="Chấm điểm trên Google Sheet" hint={<>Dùng <b>1 file Google Sheet riêng</b> (không chung với Bảng lương) để dễ tổng hợp — link ở tab “Google Sheet & lưu trữ”. Mỗi tháng 1 tab <b>YYYY-MM</b>, nhân sự xếp theo Mã NV (ADM → NV001 → NV002...). 1) Bấm <b>Tạo tab tháng</b> → có sẵn danh sách nhân sự và cột từng tiêu chí. 2) Leader điền điểm 0–5. 3) Bấm <b>Sync ngay</b> → hệ thống lưu điểm (ô để trống = xóa điểm cũ). Tab đã có thì không bị ghi đè. Điểm chưa có thì hệ số performance = 0.</>}>
         {!sheets.performanceSheetUrl && <div className="warn-box">Chưa nhập link file Google Sheet Performance — vào tab “Google Sheet & lưu trữ”.</div>}
         {!serviceAccountEmail() && <div className="warn-box">Chưa cấu hình GOOGLE_SERVICE_ACCOUNT_JSON.</div>}
         <MonthActions initialMonth={prevMonth} actions={[{ action: createPerfTabAction, label: "Tạo tab tháng" }, { action: syncPerfAction, label: "Sync ngay", primary: true }]} />

@@ -99,6 +99,10 @@ export async function savePayrollSheetUrl(_prev: PayrollActionState, fd: FormDat
   if (!spreadsheetIdFromUrl(url)) return { error: "Link không hợp lệ — dán link file Google Sheet (docs.google.com/spreadsheets/d/...)" };
 
   const current = await getSetting("googleSheets");
+  const newId = spreadsheetIdFromUrl(url);
+  for (const [flow, other] of Object.entries(current)) {
+    if (flow !== "payrollSheetUrl" && other && spreadsheetIdFromUrl(other) === newId) return { error: "File này đang được dùng cho luồng khác — mỗi luồng cần 1 file Google Sheet riêng." };
+  }
   await prisma.setting.upsert({
     where: { key: "googleSheets" },
     create: { key: "googleSheets", value: { ...current, payrollSheetUrl: url }, updatedById: admin.id },

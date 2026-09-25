@@ -25,6 +25,7 @@ const base: PayrollInput = {
   parkingOutside: false,
   latePenalty: 0,
   advanceDeduction: 0,
+  leavePayoutDays: 0,
 };
 
 // Đi làm 21,5/22 công, performance 0,8
@@ -71,7 +72,7 @@ import { HEADER, LAST_COLUMN, buildSheetValues, calcTotalCost, columnLetter, par
 const row = (over: Partial<SheetPayslipRow>): SheetPayslipRow => ({
   code: "NV001", name: "Ninh Thành Vinh", team: "Joe", baseSalary: 10_000_000, perfSalary: 5_000_000, perfCoefficient: 0.8, annualLeaveUsed: 0, unpaidLeaveDays: 0,
   actualWorkUnits: 22, standardWorkDays: 22, otHours: 0, totalUnits: 22, salaryByUnits: 10_000_000, perfActual: 4_000_000, mealAllowance: 1_250_000,
-  parkingAllowance: 0, latePenalty: 0, advanceDeduction: 0, netPay: 15_250_000, bhxhEmployee: null, bhxhCompany: null, tax: null, ...over,
+  parkingAllowance: 0, latePenalty: 0, advanceDeduction: 0, leavePayout: 0, netPay: 15_250_000, bhxhEmployee: null, bhxhCompany: null, tax: null, ...over,
 });
 
 check("Tổng chi phí = thực nhận + BHXH NLĐ + BHXH cty + thuế", calcTotalCost(15_250_000, { bhxhEmployee: 1_050_000, bhxhCompany: 2_200_000, tax: 300_000 }), 18_800_000);
@@ -86,20 +87,20 @@ check("Ô trống → null", parseMoneyCell(""), null);
 check("Ô chữ → invalid", parseMoneyCell("abc"), "invalid");
 check("Ô số âm → invalid", parseMoneyCell(-5), "invalid");
 check("Cột 0=A, 25=Z, 26=AA", [columnLetter(0), columnLetter(25), columnLetter(26)], ["A", "Z", "AA"]);
-check("Cột cuối của tab", LAST_COLUMN, "W");
+check("Cột cuối của tab", LAST_COLUMN, "X");
 
 const built = buildSheetValues([row({}), row({ code: "NV002", name: "B", netPay: 1 })]);
 check("Có dòng tiêu đề + 2 dòng nhân sự", built.length, 3);
-check("Tiêu đề có 23 cột", built[0].length, 23);
-check("Dòng 2 có công thức tổng chi phí", built[1][22], "=S2+SUM(T2:V2)");
-check("Dòng 3 có công thức tổng chi phí", built[2][22], "=S3+SUM(T3:V3)");
-check("Xuất lần đầu: 3 ô HR trống", built[1].slice(19, 22), ["", "", ""]);
+check("Tiêu đề có 24 cột (thêm Quy đổi phép tồn)", built[0].length, 24);
+check("Dòng 2 có công thức tổng chi phí", built[1][23], "=T2+SUM(U2:W2)");
+check("Dòng 3 có công thức tổng chi phí", built[2][23], "=T3+SUM(U3:W3)");
+check("Xuất lần đầu: 3 ô HR trống", built[1].slice(20, 23), ["", "", ""]);
 
 // Xuất lại: giữ số HR đã gõ trên Sheet; ô trống thì lấy số lưu trong hệ thống
 const again = buildSheetValues([row({ tax: 100 }), row({ code: "NV002" })], new Map([["NV001", { bhxhEmployee: 999, bhxhCompany: null, tax: null }]]));
-check("Giữ số đang gõ trên Sheet", again[1][19], 999);
-check("Ô Sheet trống → lấy số trong hệ thống", again[1][21], 100);
-check("Người khác không bị ảnh hưởng", again[2].slice(19, 22), ["", "", ""]);
+check("Giữ số đang gõ trên Sheet", again[1][20], 999);
+check("Ô Sheet trống → lấy số trong hệ thống", again[1][22], 100);
+check("Người khác không bị ảnh hưởng", again[2].slice(20, 23), ["", "", ""]);
 
 // Đọc lại từ Sheet (thứ tự cột có thể bị HR đổi)
 const sheet: unknown[][] = [
@@ -121,5 +122,11 @@ check("Thiếu cột Thuế bị báo", parseSheetValues([[HEADER.code, HEADER.b
 
 check("Lấy ID từ link Sheet", spreadsheetIdFromUrl("https://docs.google.com/spreadsheets/d/1AbC_-x9/edit#gid=0"), "1AbC_-x9");
 check("Link không phải Sheet", spreadsheetIdFromUrl("https://example.com/spreadsheets/d/abc"), null);
+// ── Quy đổi phép tồn ra lương (§4): cộng vào Thực nhận ──
+const leaveSlip = calcPayslip({ ...base, attendanceUnits: 22, leavePayoutDays: 5 }, params);
+check("Phép tồn 5 ngày = 10tr ÷ 22 × 5 = 2.272.727", [leaveSlip.leaveDaysPaidOut, leaveSlip.leavePayout], [5, 2_272_727]);
+check("Thực nhận cộng thêm tiền quy đổi phép", leaveSlip.netPay, 10_000_000 + 4_000_000 + 1_250_000 + 2_272_727);
+check("Không có phép tồn → không cộng gì", calcPayslip({ ...base, attendanceUnits: 22 }, params).leavePayout, 0);
+check("Ngày công tháng = 0 → tiền quy đổi = 0", calcPayslip({ ...base, standardDays: 0, leavePayoutDays: 5 }, params).leavePayout, 0);
 console.log(failed ? `\n${failed} lỗi` : "\nTất cả đều đúng");
 process.exit(failed ? 1 : 0);

@@ -21,7 +21,7 @@ export type EmployeeFormValues = {
   attendanceExempt: boolean;
   noProject: boolean;
   parkingOutside: boolean;
-  skipProbation: boolean;
+  probationMonths: string; // "" = mặc định công ty; "0" = bỏ qua thử việc
 };
 
 export type TeamOption = { id: string; name: string; type: "PRODUCTION" | "SUPPORT" };
@@ -202,6 +202,11 @@ function EmployeeFormInner({ mode, values, teams, onAddAnother }: Props & { onAd
         <input type="checkbox" name="parkingOutside" defaultChecked={values.parkingOutside} />
         <span>Gửi xe ngoài<small>Được hỗ trợ tiền gửi xe theo ngày công.</small></span>
       </label>
+      <div className="field" style={{ maxWidth: 320, marginTop: 8 }}>
+        <label htmlFor="probationMonths">Thời gian thử việc (số tháng)</label>
+        <input id="probationMonths" name="probationMonths" type="number" min={0} max={24} defaultValue={values.probationMonths} placeholder="Mặc định của công ty" />
+        <small style={{ color: "var(--text-3)", fontSize: 11.5 }}>Chưa tính phép năm trong thời gian thử việc (VD 1, 2, 3 tháng). Để trống = mặc định công ty; nhập 0 = bỏ qua thử việc.</small>
+      </div>
 
       <button className="btn primary block" type="submit" disabled={pending} style={{ marginTop: 12 }}>
         {pending ? "Đang lưu..." : mode === "create" ? "Thêm nhân sự" : "Lưu thay đổi"}
