@@ -2,6 +2,8 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 import { todayVN } from "@/lib/dates";
+import { calcDay, isWorkday } from "@/lib/attendance-rules";
+import { getSetting } from "@/lib/settings-db";
 
 /** Khoảng [00:00, 24:00) theo giờ VN của 1 ngày "YYYY-MM-DD", dạng mốc UTC. */
 function vnDayRange(day: string) {
@@ -28,11 +30,43 @@ export async function refreshDailyAttendance(employeeId: string, day: string) {
 
   // Chỉ có 1 lần quét trong ngày → chưa có checkout
   const checkOut = last.time.getTime() === first.time.getTime() ? null : last.time;
+  const calc = await calcForDay(employeeId, day, first.time, checkOut);
   return prisma.dailyAttendance.upsert({
     where: { employeeId_date: { employeeId, date } },
-    create: { employeeId, date, checkIn: first.time, checkOut },
-    update: { checkIn: first.time, checkOut },
+    create: { employeeId, date, checkIn: first.time, checkOut, ...calc },
+    update: { checkIn: first.time, checkOut, ...calc },
   });
+}
+
+/** Tính công + phạt của 1 ngày theo lịch làm việc và cấu hình hiện tại (§3.2, §3.3). */
+async function calcForDay(employeeId: string, day: string, checkIn: Date | null, checkOut: Date | null) {
+  const [schedule, penaltyConfig, override, employee] = await Promise.all([
+    getSetting("workSchedule"),
+    getSetting("latePenalty"),
+    prisma.workCalendarDay.findUnique({ where: { date: new Date(`${day}T00:00:00Z`) } }),
+    prisma.employee.findUnique({ where: { id: employeeId }, select: { attendanceExempt: true } }),
+  ]);
+  return calcDay(
+    { checkIn, checkOut, workday: isWorkday(day, schedule, override), exempt: employee?.attendanceExempt ?? false },
+    schedule,
+    penaltyConfig,
+  );
+}
+
+/**
+ * Tính lại toàn bộ bảng công 1 tháng ("YYYY-MM") từ checkin/checkout đang lưu — dùng khi đổi lịch làm việc,
+ * bảng phạt, hoặc cờ miễn chấm công. Bỏ qua các ngày đã sửa tay.
+ */
+export async function recalcMonth(month: string) {
+  const [y, m] = month.split("-").map(Number);
+  const rows = await prisma.dailyAttendance.findMany({
+    where: { isManual: false, date: { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) } },
+  });
+  for (const row of rows) {
+    const calc = await calcForDay(row.employeeId, row.date.toISOString().slice(0, 10), row.checkIn, row.checkOut);
+    await prisma.dailyAttendance.update({ where: { id: row.id }, data: calc });
+  }
+  return rows.length;
 }
 
 export type HanetLogInput = {
