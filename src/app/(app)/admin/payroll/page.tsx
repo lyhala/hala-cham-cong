@@ -109,6 +109,7 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
               <th className="right">Gửi xe</th>
               <th className="right">Phạt muộn</th>
               <th className="right">Tạm ứng</th>
+              <th className="right">Công bù</th>
               <th className="right">Quy đổi phép</th>
               <th className="right">Thực nhận</th>
               <th className="right">BHXH (NLĐ)</th>
@@ -144,7 +145,8 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
                   <td className="right">{p.parkingAllowance ? fmtMoney(p.parkingAllowance) : "—"}</td>
                   <td className="right">{p.latePenalty ? fmtMoney(p.latePenalty) : "—"}</td>
                   <td className="right">{p.advanceDeduction ? fmtMoney(p.advanceDeduction) : "—"}</td>
-                  <td className="right">{p.leavePayout ? fmtMoney(p.leavePayout) : "—"}</td>
+                  <td className="right">{p.bonusUnits || "—"}</td>
+                  <td className="right" title={p.leaveDaysPaidOut ? `${p.leaveDaysPaidOut} ngày phép tồn` : undefined}>{p.leavePayout ? fmtMoney(p.leavePayout) : "—"}</td>
                   <td className="right"><b>{fmtMoney(p.netPay)}</b></td>
                   <td className="right">{p.bhxhEmployee != null ? fmtMoney(p.bhxhEmployee) : "—"}</td>
                   <td className="right">{p.bhxhCompany != null ? fmtMoney(p.bhxhCompany) : "—"}</td>
@@ -164,7 +166,7 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
             })}
             {payslips.length === 0 && (
               <tr>
-                <td colSpan={23} className="empty">Chưa có phiếu lương tháng này. Bấm “Tính lương tháng này”. Nhân sự cần có mức lương trong hồ sơ.</td>
+                <td colSpan={24} className="empty">Chưa có phiếu lương tháng này. Bấm “Tính lương tháng này”. Nhân sự cần có mức lương trong hồ sơ.</td>
               </tr>
             )}
           </tbody>

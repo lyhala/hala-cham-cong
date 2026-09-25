@@ -49,8 +49,10 @@ export async function saveAttendanceDay(_prev: AttendanceActionState, fd: FormDa
   const calc = await calcForDay(employeeId, day, checkIn, checkOut);
   if (parsed.data.workUnits) {
     const units = Number(parsed.data.workUnits.replace(",", "."));
-    // Trên 1 công là BÙ CÔNG (VD làm bù ngày nghỉ) — cho phép tối đa 3 công / ngày để khỏi phải sửa nhiều lần
-    if (!Number.isFinite(units) || units < 0 || units > 3) return { error: "Số công phải từ 0 đến 3 (trên 1 công là bù công)" };
+    // Trên 1 công là BÙ CÔNG (VD đền bù ngày phép tồn, đền bù chuyến du lịch không đi được) — KHÔNG giới hạn trần;
+    // chỉ chặn số âm / không phải số và số vô lý (> 1.000 công, thường do nhập nhầm dấu chấm phẩy)
+    if (!Number.isFinite(units) || units < 0) return { error: "Số công phải là số từ 0 trở lên" };
+    if (units > 1000) return { error: "Số công quá lớn — kiểm tra lại (VD nhập nhầm dấu chấm / phẩy)" };
     calc.workUnits = Math.round(units * 100) / 100;
   }
 

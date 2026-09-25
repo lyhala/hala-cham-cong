@@ -15,7 +15,7 @@ import { getSetting } from "@/lib/settings-db";
 export const PAYSLIP_FIELDS = [
   "standardWorkDays", "baseSalary", "perfSalary", "perfCoefficient", "annualLeaveUsed", "unpaidLeaveDays",
   "actualWorkUnits", "otHours", "otUnits", "totalUnits", "salaryByUnits", "perfActual",
-  "mealAllowance", "parkingAllowance", "latePenalty", "advanceDeduction", "leaveDaysPaidOut", "leavePayout", "netPay",
+  "mealAllowance", "parkingAllowance", "latePenalty", "advanceDeduction", "leaveDaysPaidOut", "leavePayout", "bonusUnits", "netPay",
 ] as const satisfies readonly (keyof PayrollResult)[];
 
 export function pickPayslipFields(p: PayrollResult): PayrollResult {

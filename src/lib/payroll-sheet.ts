@@ -26,7 +26,9 @@ export type SheetPayslipRow = HrFields & {
   parkingAllowance: number;
   latePenalty: number;
   advanceDeduction: number;
+  leaveDaysPaidOut: number;
   leavePayout: number;
+  bonusUnits: number;
   netPay: number;
 };
 
@@ -49,6 +51,8 @@ const SYSTEM_COLUMNS: { header: string; value: (r: SheetPayslipRow) => string | 
   { header: "Nghỉ phép", value: (r) => r.annualLeaveUsed },
   { header: "Nghỉ không lương", value: (r) => r.unpaidLeaveDays },
   { header: "Công thực", value: (r) => r.actualWorkUnits },
+  { header: "Công bù (nhập tay)", value: (r) => r.bonusUnits },
+  { header: "Phép tồn quy đổi (ngày)", value: (r) => r.leaveDaysPaidOut },
   { header: "Ngày công tháng", value: (r) => r.standardWorkDays },
   { header: "OT (giờ)", value: (r) => r.otHours },
   { header: "Tổng công", value: (r) => r.totalUnits },
@@ -58,7 +62,8 @@ const SYSTEM_COLUMNS: { header: string; value: (r: SheetPayslipRow) => string | 
   { header: "Tiền gửi xe", value: (r) => r.parkingAllowance },
   { header: "Phạt đi muộn", value: (r) => r.latePenalty },
   { header: "Tạm ứng lương", value: (r) => r.advanceDeduction },
-  { header: "Quy đổi phép tồn", value: (r) => r.leavePayout },
+  { header: "Quy đổi phép tồn (đ)", value: (r) => r.leavePayout },
+
   { header: "Thực nhận", value: (r) => r.netPay },
 ];
 const NET_PAY_INDEX = SYSTEM_COLUMNS.length - 1;

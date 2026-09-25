@@ -83,7 +83,7 @@ async function EmployeeView({ month, employee, selectedDay }: { month: string; e
       <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>
         {employee.name} <span style={{ color: "var(--text-3)", fontSize: 12 }}>{employee.code}</span>
       </div>
-      {exempt && <div className="info-box">Nhân sự này được miễn chấm công: mọi ngày làm việc tự tính đủ công, không cần sửa.</div>}
+      {exempt && <div className="info-box">Nhân sự này được miễn chấm công: mọi ngày làm việc tự tính đủ công. Muốn bù công hoặc điều chỉnh 1 ngày thì vẫn sửa được như bình thường.</div>}
       <div className="stat-row">
         <div className="card"><div className="stat-label">Công thực</div><div className="stat-value">{totals.workUnits}<span style={{ fontSize: 12, color: "var(--text-3)" }}> / {totals.standardDays}</span></div></div>
         <div className="card"><div className="stat-label">Số lần đi muộn</div><div className="stat-value">{totals.lateDays}</div></div>
@@ -101,18 +101,17 @@ async function EmployeeView({ month, employee, selectedDay }: { month: string; e
           <CalendarLegend />
         </div>
         <DayDetail day={selected}>
-          {!exempt && (
-            <EditDayForm
-              key={selected.day}
-              employeeId={employee.id}
-              day={selected.day}
-              checkIn={selected.checkIn ? timeVN(selected.checkIn) : ""}
-              checkOut={selected.checkOut ? timeVN(selected.checkOut) : ""}
-              workUnits={selected.workUnits}
-              note={selected.note ?? ""}
-              isManual={selected.isManual}
-            />
-          )}
+          {/* Nhân sự miễn chấm công cũng sửa / bù công được như mọi người */}
+          <EditDayForm
+            key={selected.day}
+            employeeId={employee.id}
+            day={selected.day}
+            checkIn={selected.checkIn ? timeVN(selected.checkIn) : ""}
+            checkOut={selected.checkOut ? timeVN(selected.checkOut) : ""}
+            workUnits={selected.workUnits}
+            note={selected.note ?? ""}
+            isManual={selected.isManual}
+          />
         </DayDetail>
       </div>
     </>

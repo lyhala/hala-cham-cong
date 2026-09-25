@@ -222,13 +222,13 @@ export async function getMonthAttendance(employeeId: string, month: string) {
     const r = byDay.get(c.day);
     const lateExcused = excused.has(c.day);
     // Miễn chấm công: mọi ngày làm việc (đã tới) tự đủ 1 công, bỏ qua dữ liệu Hanet
-    const workUnits = c.workday && exempt && c.day <= today ? c.unit : (r?.workUnits ?? 0);
+    // Miễn chấm công: tự đủ công ngày làm việc đã qua, bỏ qua Hanet — TRỪ ngày Admin đã sửa tay (bù công / trừ công) thì lấy số đã nhập
+    const workUnits = exempt && !r?.isManual ? (c.workday && c.day <= today ? c.unit : 0) : (r?.workUnits ?? 0);
     const leave = c.workday ? leaveByDay.get(c.day) : undefined;
     const paidUnits = leave?.paidUnits ?? 0;
     let status: DayStatus;
     if (!c.workday) status = "off";
     else if (c.day > today) status = "future";
-    else if (exempt) status = "ok";
     else if (workUnits + paidUnits >= c.unit - 0.001) status = "ok"; // Chỉ xét số công: đủ công của ngày (gồm nghỉ phép/WFH đã duyệt, hoặc Admin sửa tay) là xanh
     else status = "issue";
     return {
@@ -322,7 +322,15 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
         leftAt: e.leftAt,
         // Công BÙ: phần Admin sửa tay vượt công của ngày (VD nhập 2 công cho ngày 1 công → bù 1). Tính thêm NGOÀI trần ngày công tháng của lương
         bonusUnits: Math.round(mine.filter((r) => r.isManual).reduce((s, r) => s + Math.max(0, r.workUnits - (unitByDay.get(r.date.toISOString().slice(0, 10)) ?? 0)), 0) * 100) / 100,
-        workUnits: e.attendanceExempt ? elapsedWorkdays : Math.round(mine.reduce((s, r) => s + r.workUnits, 0) * 100) / 100,
+        // Miễn chấm công: mỗi ngày làm việc đã qua tự đủ công; ngày Admin đã sửa tay (bù / trừ công) lấy số đã nhập
+        workUnits: e.attendanceExempt
+          ? Math.round(
+              calendar.days.reduce((s, d) => {
+                const manual = mine.find((r) => r.isManual && r.date.toISOString().slice(0, 10) === d.day);
+                return s + (manual ? manual.workUnits : d.workday && d.day <= today ? d.unit : 0);
+              }, 0) * 100,
+            ) / 100
+          : Math.round(mine.reduce((s, r) => s + r.workUnits, 0) * 100) / 100,
         lateDays: mine.filter((r) => r.lateMinutes > 0).length,
         latePenalty: mine.reduce((s, r) => (excused.has(r.date.toISOString().slice(0, 10)) ? s : s + r.latePenalty), 0),
       };

@@ -40,7 +40,7 @@ export default async function Page(props: PageProps<"/attendance">) {
         <Link className="btn sm" href={href(shiftMonth(month, 1))}>›</Link>
       </div>
 
-      {exempt && <div className="info-box">Bạn được miễn chấm công: mọi ngày làm việc tự tính đủ công.</div>}
+      {exempt && <div className="info-box">Bạn được miễn chấm công: mọi ngày làm việc tự tính đủ công (Admin vẫn có thể bù / điều chỉnh công từng ngày).</div>}
 
       <div className="stat-row">
         <div className="card"><div className="stat-label">Công thực</div><div className="stat-value">{totals.workUnits}<span style={{ fontSize: 12, color: "var(--text-3)" }}> / {totals.standardDays}</span></div></div>

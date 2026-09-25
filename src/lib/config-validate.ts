@@ -159,7 +159,8 @@ export const PAYSLIP_LINE_LABEL: Record<keyof Defaults["payslipVisibleLines"], s
   parkingAllowance: "Tiền gửi xe",
   latePenalty: "Phạt đi muộn",
   advanceDeduction: "Tạm ứng lương",
-  leavePayout: "Quy đổi phép tồn",
+  leavePayout: "Quy đổi phép tồn (tiền, cộng riêng)",
+  bonusUnits: "Công bù",
   annualLeave: "Nghỉ phép (số ngày)",
   unpaidLeave: "Nghỉ không lương (số ngày)",
 };

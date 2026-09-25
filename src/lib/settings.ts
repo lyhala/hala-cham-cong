@@ -85,6 +85,7 @@ export const SETTING_DEFAULTS = {
     leavePayout: true,
     annualLeave: true,
     unpaidLeave: true,
+    bonusUnits: true,
   },
 
   // §11 — Giao diện

@@ -345,8 +345,9 @@ model Payslip {
   parkingAllowance Int // Tiền gửi xe
   latePenalty      Int   @default(0)
   advanceDeduction Int   @default(0) // Tạm ứng lương
-  leaveDaysPaidOut Float @default(0) // Số ngày phép tồn quy đổi ra lương (cuối năm / tháng nghỉ việc)
-  leavePayout      Int   @default(0) // Tiền quy đổi phép tồn
+  leaveDaysPaidOut Float @default(0) // Số ngày phép tồn quy đổi ra công (tháng 12 / tháng nghỉ việc) — tính vào Tổng công
+  leavePayout      Int   @default(0) // Tiền tương ứng của phép tồn quy đổi (chỉ để hiển thị, ĐÃ nằm trong Lương theo tổng công)
+  bonusUnits       Float @default(0) // Công bù do Admin nhập tay (vượt công của ngày) — tính vào Tổng công, chỉ nhân với lương base
   netPay           Int // Thực nhận
 
   // Kế toán điền trên Sheet rồi sync ngược (chỉ Admin thấy)

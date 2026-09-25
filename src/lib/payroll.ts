@@ -8,12 +8,12 @@ export type SalaryParams = SettingValue<"salaryParams">;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export type PayrollInput = {
-  standardDays: number; // Ngày công tháng (đếm từ lịch làm việc)
+  standardDays: number; // Ngày công tháng (tổng số công các ngày làm việc trong lịch)
   baseSalary: number; // Lương base đang hiệu lực trong tháng
   perfSalary: number; // Lương performance đang hiệu lực trong tháng
   perfCoefficient: number; // Hệ số performance (0–1)
   attendanceUnits: number; // Tổng công từ bảng chấm công (đã tính thiếu giờ, trừ ½ công đi muộn sau 10h...), KHÔNG gồm công bù
-  bonusUnits: number; // Công BÙ do Admin sửa tay vượt công của ngày — cộng thêm ngoài trần ngày công tháng
+  bonusUnits: number; // Công BÙ do Admin nhập tay (vượt công của ngày) — không giới hạn trần
   annualLeaveDays: number; // Nghỉ phép năm: hưởng lương → tính vào công thực
   otherPaidLeaveDays: number; // Nghỉ kết hôn / tang lễ: hưởng nguyên lương → tính vào công thực
   unpaidLeaveDays: number; // Nghỉ không lương: chỉ để hiển thị (đã không có trong công chấm)
@@ -32,38 +32,41 @@ export type PayrollResult = {
   perfCoefficient: number;
   annualLeaveUsed: number;
   unpaidLeaveDays: number;
-  actualWorkUnits: number; // Công thực
+  actualWorkUnits: number; // Công thực (đi làm thật + nghỉ hưởng lương, tối đa ngày công tháng)
+  bonusUnits: number; // Công bù (Admin nhập tay)
   otHours: number;
   otUnits: number;
-  totalUnits: number; // Tổng công
-  salaryByUnits: number; // Lương theo tổng công
+  totalUnits: number; // Tổng công = công thực + công bù + công OT (có thể vượt ngày công tháng)
+  salaryByUnits: number; // Lương theo tổng công (chỉ nhân với lương base)
   perfActual: number; // Performance thực
   mealAllowance: number; // Hỗ trợ cơm
   parkingAllowance: number; // Tiền gửi xe
   latePenalty: number;
   advanceDeduction: number;
-  leaveDaysPaidOut: number; // Số ngày phép tồn được quy đổi
-  leavePayout: number; // Tiền quy đổi phép tồn
+  leaveDaysPaidOut: number; // Số ngày phép tồn được quy đổi ra lương
+  leavePayout: number; // Tiền quy đổi phép tồn — khoản CỘNG RIÊNG vào Thực nhận (không nằm trong Lương theo tổng công)
   netPay: number; // Thực nhận
 };
 
 /**
- * Thực nhận = Lương theo tổng công + Performance thực + Hỗ trợ cơm + Tiền gửi xe + Phép tồn quy đổi − Phạt đi muộn − Tạm ứng
+ * Thực nhận = Lương theo tổng công + Performance thực + Hỗ trợ cơm + Tiền gửi xe + Quy đổi phép tồn − Phạt đi muộn − Tạm ứng
  *  - Công thực = công chấm công + phép năm + nghỉ hưởng lương khác (không vượt ngày công tháng)
- *  - Lương theo tổng công = base × Tổng công ÷ Ngày công tháng (Tổng công = Công thực + Công OT)
- *  - Hỗ trợ cơm và Tiền gửi xe tính theo Công thực (không tính OT)
+ *  - Tổng công = Công thực + Công bù (Admin nhập tay, KHÔNG giới hạn trần) + Công OT. VD 22 công thực + 3 công bù = 25/22 công
+ *  - Lương theo tổng công = base × Tổng công ÷ Ngày công tháng — CHỈ tính theo lương base, performance không liên quan
+ *  - Hỗ trợ cơm và Tiền gửi xe chỉ tính theo Công thực (ngày đi làm thật), không tính công bù / OT
+ *  - Quy đổi phép tồn = (base ÷ Ngày công tháng) × số ngày phép tồn: khoản cộng RIÊNG (tháng 12 / tháng nghỉ việc)
  */
 export function calcPayslip(input: PayrollInput, params: SalaryParams): PayrollResult {
   const std = input.standardDays;
-  // Công thực bị chặn trần ở ngày công tháng (tránh tính trùng phép + chấm công), công bù được cộng thêm ngoài trần
-  const actual = round2(Math.min(std, input.attendanceUnits + input.annualLeaveDays + input.otherPaidLeaveDays) + input.bonusUnits);
-  const total = round2(actual + input.otUnits);
+  // Công thực bị chặn trần ở ngày công tháng (tránh tính trùng phép + chấm công)
+  const actual = round2(Math.min(std, input.attendanceUnits + input.annualLeaveDays + input.otherPaidLeaveDays));
+  const total = round2(actual + input.bonusUnits + input.otUnits);
 
   const salaryByUnits = std > 0 ? Math.round((input.baseSalary * total) / std) : 0;
   const perfActual = Math.round(input.perfSalary * input.perfCoefficient);
   const mealAllowance = std > 0 ? Math.round((params.mealAllowancePerMonth / std) * actual) : 0;
   const parkingAllowance = input.parkingOutside ? Math.round(params.parkingPerDay * actual) : 0;
-  // Phép tồn quy đổi = lương base ÷ ngày công chuẩn của tháng × số ngày phép tồn
+  // Phép tồn quy đổi = lương base ÷ ngày công tháng × số ngày phép tồn — khoản cộng riêng vào Thực nhận
   const leavePayout = std > 0 ? Math.round((input.baseSalary / std) * input.leavePayoutDays) : 0;
   const netPay = salaryByUnits + perfActual + mealAllowance + parkingAllowance + leavePayout - input.latePenalty - input.advanceDeduction;
 
@@ -75,6 +78,7 @@ export function calcPayslip(input: PayrollInput, params: SalaryParams): PayrollR
     annualLeaveUsed: input.annualLeaveDays,
     unpaidLeaveDays: input.unpaidLeaveDays,
     actualWorkUnits: actual,
+    bonusUnits: round2(input.bonusUnits),
     otHours: input.otHours,
     otUnits: input.otUnits,
     totalUnits: total,
@@ -89,7 +93,6 @@ export function calcPayslip(input: PayrollInput, params: SalaryParams): PayrollR
     netPay,
   };
 }
-
 /** Công OT = (Giờ OT ÷ 7.5) × Hệ số OT — cần đơn OT đã duyệt; hệ số theo ngày thường / cuối tuần / lễ tết. */
 export function calcOtUnits(hours: { weekday: number; weekend: number; holiday: number }, params: SalaryParams, hoursPerDay = 7.5) {
   const c = params.otCoefficients;
