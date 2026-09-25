@@ -52,12 +52,29 @@ export function calcLate(checkIn: Date, schedule: WorkSchedule, config: LatePena
   return { lateMinutes, penalty, halfDayDeducted: false };
 }
 
+/** Các mốc trong ngày (phút từ 00:00) suy ra từ khung giờ cấu hình — đổi cấu hình ca là công thức đổi theo. */
+export function scheduleTimes(schedule: WorkSchedule) {
+  const ms = toMinutes(schedule.morningStart);
+  const me = toMinutes(schedule.morningEnd);
+  const as = toMinutes(schedule.afternoonStart);
+  const ae = toMinutes(schedule.afternoonEnd);
+  return { ms, me, as, ae, morningMin: me - ms, afternoonMin: ae - as, dayMin: me - ms + (ae - as) };
+}
+
+/** Số giờ của 1 ngày công chuẩn = tổng 2 buổi (VD 8h30–12h + 13h30–17h30 = 3,5 + 4 = 7,5 giờ). */
+export function standardHoursPerDay(schedule: WorkSchedule) {
+  return scheduleTimes(schedule).dayMin / 60;
+}
+
+const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+
 export type DayInput = {
   checkIn: Date | null;
   checkOut: Date | null;
   workday: boolean;
   exempt: boolean; // Cờ "miễn chấm công"
   lateExcused?: boolean; // Ngày này có đơn đi muộn được miễn (nằm trong 3 suất/tháng)
+  leaveSession?: "MORNING" | "AFTERNOON" | null; // Buổi đã có đơn nghỉ / WFH nửa ngày được duyệt
 };
 
 export type DayResult = {
@@ -70,14 +87,18 @@ export type DayResult = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
- * Tính công 1 ngày.
+ * Tính công 1 ngày, mọi mốc giờ lấy từ khung giờ cấu hình (buổi sáng, nghỉ trưa, buổi chiều).
  * - Ngày nghỉ (không phải ngày làm việc): 0 công. Miễn chấm công: đủ 1 công, bỏ qua dữ liệu Hanet.
- * - Đủ công khi checkout ≥ giờ đến THỰC TẾ + 7.5h làm + 1.5h nghỉ trưa (không theo giờ ghi trong đơn xin đi muộn).
- *   Thiếu thì tính theo tỷ lệ: giờ làm thực = (checkout − giờ đến) − nghỉ trưa, chia 7.5h.
- * - Đến sớm hơn giờ vào ca thì lấy giờ vào ca làm mốc (không có chuyện về sớm hơn 17:30).
+ * - Công = giờ làm thực tế ÷ giờ của 1 ngày công chuẩn. Giờ làm thực tế = thời gian có mặt (từ giờ đến, nhưng không
+ *   sớm hơn giờ vào ca, tới giờ về) TRỪ phần nằm trong giờ nghỉ trưa. Chỉ trừ khi thực sự nằm trong giờ nghỉ trưa:
+ *   VD 11h30 → 17h30 = 6 giờ có mặt − 1,5 giờ nghỉ trưa = 4,5 giờ (không phải 6); 13h30 → 17h30 = 4 giờ (không trừ gì).
+ * - Đến muộn thì làm bù buổi tối vẫn được cộng (giờ đến thực tế, không theo giờ ghi trong đơn xin đi muộn):
+ *   đủ công khi ở lại tới giờ đến + giờ công chuẩn + nghỉ trưa. Tối đa 1 công/ngày.
+ * - Ngày có đơn nghỉ / WFH NỬA NGÀY được duyệt: chỉ xét buổi còn lại (không phạt đi muộn buổi đã nghỉ), công của buổi
+ *   này tối đa 0,5 (buổi được đi làm đủ = 0,5 công + 0,5 công từ đơn nghỉ = 1 công).
  * - Có checkin mà chưa có checkout: 0 công (chưa đủ dữ liệu; Admin sửa tay được).
  * - Đến sau 10h mà KHÔNG có đơn được miễn: trừ thêm 1/2 công vào công thực, không phạt tiền.
- *   Có đơn được miễn thì tính công bình thường theo giờ thực tế (VD đến 10h, về 17h30 = 6/7.5 công; muốn đủ công phải ở lại tới 19h).
+ *   Có đơn được miễn thì tính công bình thường theo giờ thực tế (VD đến 10h, về 17h30 = 6/7,5 công; muốn đủ công phải ở lại tới 19h).
  */
 export function calcDay(input: DayInput, schedule: WorkSchedule, config: LatePenaltyConfig): DayResult {
   const none: DayResult = { workUnits: 0, lateMinutes: 0, latePenalty: 0, halfDayDeducted: false };
@@ -85,21 +106,31 @@ export function calcDay(input: DayInput, schedule: WorkSchedule, config: LatePen
   if (input.exempt) return { ...none, workUnits: 1 };
   if (!input.checkIn) return none;
 
-  const late = calcLate(input.checkIn, schedule, config);
+  const t = scheduleTimes(schedule);
+  const inMin = minuteOfDayVN(input.checkIn);
+  // Nghỉ sáng thì mốc đến chuẩn là đầu buổi chiều và không áp bảng phạt (bảng phạt chỉ dành cho giờ vào ca buổi sáng)
+  const late =
+    input.leaveSession === "MORNING"
+      ? { lateMinutes: Math.max(0, inMin - t.as), penalty: 0, halfDayDeducted: false }
+      : calcLate(input.checkIn, schedule, config);
   const halfDayDeducted = late.halfDayDeducted && !input.lateExcused;
   const base = { lateMinutes: late.lateMinutes, latePenalty: late.penalty, halfDayDeducted };
   if (!input.checkOut) return { ...base, workUnits: 0 };
 
-  const shiftStart = toMinutes(schedule.morningStart);
-  // Ngày VN của checkin (đổi mốc thời gian → số phút từ 00:00 cùng ngày)
-  const effectiveStartMs = input.checkIn.getTime() + Math.max(0, shiftStart - minuteOfDayVN(input.checkIn)) * 60_000;
-  const spanHours = (input.checkOut.getTime() - effectiveStartMs) / 3_600_000;
-  const workedHours = Math.min(schedule.hoursPerDay, Math.max(0, spanHours - schedule.lunchBreakHours));
-  let units = workedHours / schedule.hoursPerDay;
+  const outMin = minuteOfDayVN(input.checkOut);
+  let units: number;
+  if (input.leaveSession) {
+    const [from, to, sessionMin] = input.leaveSession === "MORNING" ? [t.as, t.ae, t.afternoonMin] : [t.ms, t.me, t.morningMin];
+    units = sessionMin > 0 ? 0.5 * Math.min(1, overlap(inMin, outMin, from, to) / sessionMin) : 0;
+  } else {
+    const start = Math.max(inMin, t.ms); // đến sớm hơn giờ vào ca thì lấy giờ vào ca làm mốc
+    const present = Math.max(0, outMin - start);
+    const workedMin = Math.max(0, present - overlap(start, outMin, t.me, t.as));
+    units = Math.min(t.dayMin, workedMin) / t.dayMin;
+  }
   if (halfDayDeducted) units = Math.max(0, units - 0.5);
   return { ...base, workUnits: round2(units) };
 }
-
 export type LateRequestRef = { dateFrom: Date; employeeId: string };
 
 /**

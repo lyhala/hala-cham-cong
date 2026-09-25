@@ -2,6 +2,7 @@ import "server-only";
 
 import type { Prisma } from "@/generated/prisma/client";
 import { getMonthSummaries, loadMonthCalendar } from "@/lib/attendance";
+import { standardHoursPerDay } from "@/lib/attendance-rules";
 import { prisma } from "@/lib/db";
 import { calcOtUnits, calcPayslip, calcPerfCoefficient, type PayrollResult, type SalaryParams } from "@/lib/payroll";
 import { calcTotalCost } from "@/lib/payroll-sheet";
@@ -127,6 +128,7 @@ async function requestAdjustments(month: string, employeeIds: string[], calendar
     },
   });
 
+  const hoursPerDay = standardHoursPerDay(await getSetting("workSchedule")); // công OT = giờ OT ÷ giờ công chuẩn theo cấu hình ca
   const dayInfo = new Map(calendar.days.map((d) => [d.day, d]));
   const workday = (day: string) => dayInfo.get(day)?.workday ?? false;
   const result = new Map<string, typeof NO_ADJUSTMENTS>();
@@ -153,7 +155,7 @@ async function requestAdjustments(month: string, employeeIds: string[], calendar
   for (const [id, hours] of ot) {
     const adj = get(id);
     adj.otHours = Math.round((hours.weekday + hours.weekend + hours.holiday) * 100) / 100;
-    adj.otUnits = calcOtUnits(hours, params);
+    adj.otUnits = calcOtUnits(hours, params, hoursPerDay);
   }
   return result;
 }

@@ -1,7 +1,7 @@
 // Kiểm tra quy tắc tính công + phạt đi muộn (spec §3.2, §3.3) — KHÔNG cần database hay server.
 // Chạy: npm run check:rules
 
-import { calcDay, calcLate, monthlyLatePenalty, pickExemptDays } from "../src/lib/attendance-rules";
+import { calcDay, calcLate, monthlyLatePenalty, pickExemptDays, standardHoursPerDay } from "../src/lib/attendance-rules";
 import { SETTING_DEFAULTS } from "../src/lib/settings";
 
 const schedule = SETTING_DEFAULTS.workSchedule;
@@ -47,5 +47,30 @@ check("10:01 không đơn, về 17:30 = 0,8 − 0,5 = 0,3", day("10:01", "17:30"
 check("Miễn 3 ngày sớm nhất", [...pickExemptDays(["2026-09-10", "2026-09-02", "2026-09-05", "2026-09-01"], 3)], ["2026-09-01", "2026-09-02", "2026-09-05"]);
 check("Phạt tháng trừ ngày được miễn", monthlyLatePenalty([{ day: "2026-09-01", latePenalty: 5000 }, { day: "2026-09-10", latePenalty: 7000 }], new Set(["2026-09-01"])), 7000);
 
+// ── Công tính theo giờ có mặt thực tế trong khung giờ cấu hình; nghỉ trưa chỉ trừ khi nằm trong đó ──
+check("11:30 → 17:30 (có mặt 6h − nghỉ trưa 1,5h = 4,5h) = 0,6 công", day("11:30", "17:30", { lateExcused: true }).workUnits, 0.6);
+check("12:30 → 17:30 (trừ 1h nghỉ trưa còn lại) = 4h = 0,53 công", day("12:30", "17:30", { lateExcused: true }).workUnits, 0.53);
+check("13:30 → 17:30 (không nằm trong nghỉ trưa, không trừ) = 4h = 0,53 công", day("13:30", "17:30", { lateExcused: true }).workUnits, 0.53);
+check("8:30 → 13:00 (trừ 1h nghỉ trưa) = 3,5h = 0,47 công", day("08:30", "13:00").workUnits, 0.47);
+check("8:30 → 12:00 = 3,5h = 0,47 công", day("08:30", "12:00").workUnits, 0.47);
+check("Quét trọn trong giờ nghỉ trưa = 0 công", day("12:10", "12:50", { lateExcused: true }).workUnits, 0);
+check("Về 19:00 sau khi đến 8:30 vẫn tối đa 1 công", day("08:30", "19:00").workUnits, 1);
+
+// Nghỉ nửa ngày: chỉ xét buổi còn lại, không phạt muộn buổi đã nghỉ, đủ buổi = 0,5 công
+const morningLeave = day("13:30", "17:30", { leaveSession: "MORNING" });
+check("Nghỉ sáng, đi làm đủ buổi chiều = 0,5 công, không phạt", [morningLeave.workUnits, morningLeave.latePenalty, morningLeave.halfDayDeducted], [0.5, 0, false]);
+const lateAfternoon = day("14:00", "17:30", { leaveSession: "MORNING" });
+check("Nghỉ sáng, vào chiều muộn 30' = 3,5/4 × 0,5 = 0,44, không phạt tiền", [lateAfternoon.workUnits, lateAfternoon.lateMinutes, lateAfternoon.latePenalty], [0.44, 30, 0]);
+check("Nghỉ chiều, đi làm đủ buổi sáng = 0,5 công", day("08:30", "12:00", { leaveSession: "AFTERNOON" }).workUnits, 0.5);
+check("Nghỉ chiều, đến muộn 8:50 vẫn bị phạt bình thường", day("08:50", "12:00", { leaveSession: "AFTERNOON" }).latePenalty, 25000);
+
+// Đổi cấu hình giờ làm: 8h–12h + 13h–17h (8 giờ/ngày) → mọi công thức đổi theo
+const long: typeof schedule = { ...schedule, morningStart: "08:00", morningEnd: "12:00", afternoonStart: "13:00", afternoonEnd: "17:00" };
+const dayLong = (a: string, b: string) => calcDay({ checkIn: at(a), checkOut: at(b), workday: true, exempt: false, lateExcused: true }, long, config).workUnits;
+check("Cấu hình 8h/ngày: 1 ngày công chuẩn = 8 giờ", standardHoursPerDay(long), 8);
+check("Cấu hình mới: 8:00 → 17:00 = 1 công", dayLong("08:00", "17:00"), 1);
+check("Cấu hình mới: 8:00 → 16:00 = 7h/8h = 0,88", dayLong("08:00", "16:00"), 0.88);
+check("Cấu hình mới: 11:00 → 17:00 = (6h − 1h nghỉ trưa)/8 = 0,63", dayLong("11:00", "17:00"), 0.63);
+check("Cấu hình mặc định: 1 ngày công chuẩn = 7,5 giờ", standardHoursPerDay(schedule), 7.5);
 console.log(failed ? `\n${failed} lỗi` : "\nTất cả đều đúng");
 process.exit(failed ? 1 : 0);

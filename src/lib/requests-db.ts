@@ -96,9 +96,12 @@ async function load(id: string) {
   return prisma.request.findUnique({ where: { id }, include: withOwner });
 }
 
-async function afterChange(req: { type: string; employeeId: string; dateFrom: Date | null }) {
+async function afterChange(req: { type: string; employeeId: string; dateFrom: Date | null; dateTo: Date | null }) {
   // Đơn đi muộn đổi trạng thái → suất miễn phạt của tháng có thể dồn sang đơn khác → tính lại công tháng đó
-  if (req.type === "LATE" && req.dateFrom) await recalcEmployeeMonth(req.employeeId, dayOf(req.dateFrom).slice(0, 7));
+  // Đơn nghỉ / WFH đổi trạng thái → buổi nghỉ thay đổi cách tính công các ngày trong đơn → tính lại các tháng đó
+  if (!req.dateFrom || !["LATE", "LEAVE", "WFH"].includes(req.type)) return;
+  const months = new Set([dayOf(req.dateFrom).slice(0, 7), dayOf(req.dateTo ?? req.dateFrom).slice(0, 7)]);
+  for (const month of months) await recalcEmployeeMonth(req.employeeId, month);
 }
 
 /** Leader / Admin duyệt. 1 cấp: duyệt xong là APPROVED; 2 cấp (theo cấu hình từng loại đơn): Leader → chờ Admin. */

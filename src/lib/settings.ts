@@ -4,14 +4,12 @@
 import type { RequestType } from "@/generated/prisma/enums";
 
 export const SETTING_DEFAULTS = {
-  // §3.2 — Ca chuẩn
+  // §3.2 — Ca chuẩn. Giờ công chuẩn/ngày (7,5), giờ nghỉ trưa (1,5) và mọi công thức chấm công đều suy ra từ 4 mốc giờ này
   workSchedule: {
     morningStart: "08:30",
     morningEnd: "12:00",
     afternoonStart: "13:30",
     afternoonEnd: "17:30",
-    hoursPerDay: 7.5,
-    lunchBreakHours: 1.5,
     workWeekdays: [1, 2, 3, 4, 5], // T2–T6 (0 = Chủ nhật)
   },
 

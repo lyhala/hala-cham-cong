@@ -43,12 +43,18 @@ export async function refreshDailyAttendance(employeeId: string, day: string) {
 
 /** Tính công + phạt của 1 ngày theo lịch làm việc và cấu hình hiện tại (§3.2, §3.3). */
 export async function calcForDay(employeeId: string, day: string, checkIn: Date | null, checkOut: Date | null) {
-  const [schedule, penaltyConfig, override, employee, excusedDays] = await Promise.all([
+  const dayDate = new Date(`${day}T00:00:00Z`);
+  const [schedule, penaltyConfig, override, employee, excusedDays, halfDayLeave] = await Promise.all([
     getSetting("workSchedule"),
     getSetting("latePenalty"),
-    prisma.workCalendarDay.findUnique({ where: { date: new Date(`${day}T00:00:00Z`) } }),
+    prisma.workCalendarDay.findUnique({ where: { date: dayDate } }),
     prisma.employee.findUnique({ where: { id: employeeId }, select: { attendanceExempt: true } }),
     lateExcusedDays(employeeId, day.slice(0, 7)),
+    // Đơn nghỉ / WFH nửa ngày đã duyệt của ngày này → chỉ xét buổi còn lại
+    prisma.request.findFirst({
+      where: { employeeId, status: "APPROVED", deletedAt: null, type: { in: ["LEAVE", "WFH"] }, dayPortion: { in: ["MORNING", "AFTERNOON"] }, dateFrom: { lte: dayDate }, dateTo: { gte: dayDate } },
+      select: { dayPortion: true },
+    }),
   ]);
   return calcDay(
     {
@@ -57,6 +63,7 @@ export async function calcForDay(employeeId: string, day: string, checkIn: Date 
       workday: isWorkday(day, schedule, override),
       exempt: employee?.attendanceExempt ?? false,
       lateExcused: excusedDays.has(day),
+      leaveSession: halfDayLeave?.dayPortion === "MORNING" || halfDayLeave?.dayPortion === "AFTERNOON" ? halfDayLeave.dayPortion : null,
     },
     schedule,
     penaltyConfig,
