@@ -55,9 +55,16 @@ export async function calculateMonth(month: string, employeeId?: string): Promis
   const people = summaries.rows.filter((r) => !employeeId || r.id === employeeId);
   const ids = people.map((p) => p.id);
   const adjustments = await requestAdjustments(month, ids, calendar, params);
-  // Phép tồn quy đổi ra lương: phiếu tháng 12 (hết năm) và phiếu tháng nhân sự nghỉ việc
-  const payoutIds = people.filter((p) => month.endsWith("-12") || (p.leftAt && p.leftAt.toISOString().slice(0, 7) === month)).map((p) => p.id);
-  const leave = payoutIds.length ? await annualLeaveBalances(payoutIds, Number(month.slice(0, 4)), Number(month.slice(5))) : new Map<string, { toPayOut: number }>();
+  // Phép tồn quy đổi ra lương: TỰ ĐỘNG cho cả công ty ở phiếu tháng 12 (hết năm) và cho người nghỉ việc ở tháng nghỉ việc;
+  // các tháng khác chỉ quy đổi cho người Admin đã tick "quy đổi phép" trên phiếu (VD xin nghỉ giữa năm còn dư phép).
+  const ticked = new Set(
+    (await prisma.payslip.findMany({ where: { month, employeeId: { in: ids }, payoutLeave: true }, select: { employeeId: true } })).map((x) => x.employeeId),
+  );
+  const payoutIds = people.filter((p) => month.endsWith("-12") || (p.leftAt && p.leftAt.toISOString().slice(0, 7) === month) || ticked.has(p.id)).map((p) => p.id);
+  // Trừ phép đã quy đổi ở các tháng khác trong năm (không trừ chính phiếu này) để không trả tiền 2 lần
+  const leave = payoutIds.length
+    ? await annualLeaveBalances(payoutIds, Number(month.slice(0, 4)), Number(month.slice(5)), { excludePayoutMonth: month })
+    : new Map<string, { toPayOut: number }>();
 
   const [history, scores] = await Promise.all([
     prisma.salaryHistory.findMany({

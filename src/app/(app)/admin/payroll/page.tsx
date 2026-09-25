@@ -9,7 +9,8 @@ import { serviceAccountEmail } from "@/lib/google-sheets";
 import { getSetting } from "@/lib/settings-db";
 import { ActionButton } from "../employees/_components/ActionButton";
 import { SheetUrlForm } from "./_components/SheetUrlForm";
-import { calculatePayroll, exportPayrollSheet, sendPayroll, syncPayrollSheet } from "./actions";
+import { calculatePayroll, exportPayrollSheet, sendPayroll, syncPayrollSheet, toggleLeavePayout } from "./actions";
+import { annualLeaveBalances } from "@/lib/requests-db";
 
 export default async function Page(props: PageProps<"/admin/payroll">) {
   await requireRole("ADMIN");
@@ -18,13 +19,17 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
   const month = isValidMonth(sp.month) ? sp.month : thisMonth;
 
   const payslips = sortByEmployeeCode(
-    await prisma.payslip.findMany({ where: { month }, include: { employee: { select: { id: true, code: true, name: true, status: true } } } }),
+    await prisma.payslip.findMany({ where: { month }, include: { employee: { select: { id: true, code: true, name: true, status: true, leftAt: true } } } }),
     (p) => p.employee.code,
   );
   const pending = payslips.filter((p) => needsSend(p)).length;
   const totalNet = payslips.reduce((s, p) => s + p.netPay, 0);
   const withCost = payslips.filter((p) => p.totalCost != null);
   const totalCost = withCost.reduce((s, p) => s + (p.totalCost ?? 0), 0);
+  // Phép tồn hiện có của từng người (đã trừ phần quy đổi ở các tháng khác) — để Admin tick quy đổi giữa năm
+  const year = Number(month.slice(0, 4));
+  const leaveOf = payslips.length ? await annualLeaveBalances(payslips.map((p) => p.employeeId), year, Number(month.slice(5)), { excludePayoutMonth: month }) : new Map();
+  const isDecember = month.endsWith("-12");
   const { payrollSheetUrl } = await getSetting("googleSheets");
   const accountEmail = serviceAccountEmail();
 
@@ -156,6 +161,17 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
                   <td style={{ whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 6 }}>
                       <ActionButton action={calculatePayroll} fields={{ month, employeeId: p.employeeId }} label="Tính lại" showResult={false} />
+                      {/* Quy đổi phép tồn giữa năm: tick cho từng người. Tháng 12 và tháng nghỉ việc tự quy đổi nên không cần tick */}
+                      {!isDecember && !(p.employee.leftAt && p.employee.leftAt.toISOString().slice(0, 7) === month) && (p.payoutLeave || (leaveOf.get(p.employeeId)?.toPayOut ?? 0) > 0) && (
+                        <ActionButton
+                          action={toggleLeavePayout}
+                          fields={{ month, employeeId: p.employeeId, on: p.payoutLeave ? "0" : "1" }}
+                          label={p.payoutLeave ? "Bỏ quy đổi phép" : `Quy đổi phép (${leaveOf.get(p.employeeId)?.toPayOut} ngày)`}
+                          title={p.payoutLeave ? "Bỏ quy đổi phép tồn của tháng này" : `Quy đổi ${leaveOf.get(p.employeeId)?.toPayOut} ngày phép tồn ra tiền vào phiếu lương tháng này`}
+                          confirm={p.payoutLeave ? undefined : `Quy đổi ${leaveOf.get(p.employeeId)?.toPayOut} ngày phép tồn của ${p.employee.name} ra tiền vào lương tháng ${month}? Số phép này sẽ được coi là đã dùng.`}
+                          showResult={false}
+                        />
+                      )}
                       {stale && (
                         <ActionButton action={sendPayroll} fields={{ month, employeeId: p.employeeId }} label={p.sentAt ? "Gửi lại" : "Gửi"} showResult={false} />
                       )}

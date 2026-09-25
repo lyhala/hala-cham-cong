@@ -27,16 +27,23 @@ function parse(fd: FormData) {
   return { month, employeeId };
 }
 
+/** Chấm công và đơn từ chỉ giữ vài tháng (§17) — tháng cũ hơn không còn dữ liệu nguồn, tính lại sẽ ra kết quả sai. */
+async function staleMonthError(month: string) {
+  const cut = retentionCutoffs(await getSetting("retention"));
+  const oldest = cut.attendanceMonth > cut.requestMonth ? cut.attendanceMonth : cut.requestMonth;
+  return month < oldest
+    ? `Dữ liệu chấm công / đơn từ tháng ${month} đã bị xóa theo chính sách lưu trữ nên không tính lại được (chỉ tính lại từ tháng ${oldest}). Phiếu đã tính được giữ nguyên.`
+    : null;
+}
+
 /** "Tính lương" (cả tháng) hoặc "Tính lại" (1 người). Dùng lại được nhiều lần — kết quả cuối cùng ghi đè. */
 export async function calculatePayroll(_prev: PayrollActionState, fd: FormData): Promise<PayrollActionState> {
   const admin = await requireRole("ADMIN");
   const { month, employeeId } = parse(fd);
   if (!isValidMonth(month)) return { error: "Tháng không hợp lệ" };
 
-  // Chấm công và đơn từ chỉ giữ vài tháng (§17) — tháng cũ hơn không còn dữ liệu nguồn, tính lại sẽ ra kết quả sai
-  const cut = retentionCutoffs(await getSetting("retention"));
-  const oldest = cut.attendanceMonth > cut.requestMonth ? cut.attendanceMonth : cut.requestMonth;
-  if (month < oldest) return { error: `Dữ liệu chấm công / đơn từ tháng ${month} đã bị xóa theo chính sách lưu trữ nên không tính lại được (chỉ tính lại từ tháng ${oldest}). Phiếu đã tính được giữ nguyên.` };
+  const tooOld = await staleMonthError(month);
+  if (tooOld) return { error: tooOld };
 
   const result = await calculateMonth(month, employeeId);
   const who = employeeId ? (await prisma.employee.findUnique({ where: { id: employeeId }, select: { code: true } }))?.code ?? employeeId : "toàn công ty";
@@ -111,6 +118,34 @@ export async function savePayrollSheetUrl(_prev: PayrollActionState, fd: FormDat
   await logAudit({ actorId: admin.id, action: "config.update", targetType: "Setting", targetId: "googleSheets", summary: "Đặt link file Google Sheet Bảng lương" });
   refresh();
   return { ok: true, message: "Đã lưu link file Sheet." };
+}
+
+/**
+ * Tick / bỏ tick "quy đổi phép tồn" cho 1 phiếu lương ở tháng BẤT KỲ (VD nhân sự xin nghỉ giữa năm còn dư phép): phép tồn hiện có
+ * được quy đổi ra tiền cộng vào phiếu tháng này và tính là đã dùng (tháng 12 không trả lần nữa). Tháng 12 và tháng nghỉ việc thì tự quy đổi.
+ */
+export async function toggleLeavePayout(_prev: PayrollActionState, fd: FormData): Promise<PayrollActionState> {
+  const admin = await requireRole("ADMIN");
+  const { month, employeeId } = parse(fd);
+  const on = String(fd.get("on") ?? "") === "1";
+  if (!isValidMonth(month) || !employeeId) return { error: "Dữ liệu không hợp lệ" };
+  const tooOld = await staleMonthError(month);
+  if (tooOld) return { error: tooOld };
+
+  const slip = await prisma.payslip.findUnique({ where: { employeeId_month: { employeeId, month } }, include: { employee: { select: { code: true, name: true } } } });
+  if (!slip) return { error: "Chưa có phiếu lương tháng này — hãy tính lương trước" };
+  await prisma.payslip.update({ where: { id: slip.id }, data: { payoutLeave: on } });
+  await calculateMonth(month, employeeId);
+  const after = await prisma.payslip.findUniqueOrThrow({ where: { id: slip.id } });
+  await logAudit({
+    actorId: admin.id,
+    action: "payroll.leave_payout",
+    targetType: "Payslip",
+    targetId: slip.id,
+    summary: `${on ? "Quy đổi" : "Bỏ quy đổi"} phép tồn tháng ${month} cho ${slip.employee.code} - ${slip.employee.name}${on ? `: ${after.leaveDaysPaidOut} ngày = ${after.leavePayout.toLocaleString("vi-VN")}đ` : ""}`,
+  });
+  refresh();
+  return { ok: true, message: on ? `Đã quy đổi ${after.leaveDaysPaidOut} ngày phép tồn = ${after.leavePayout.toLocaleString("vi-VN")}đ` : "Đã bỏ quy đổi phép tồn" };
 }
 
 /** "Gửi" / "Gửi lại": nhân sự thấy số liệu mới nhất sau khi gửi. Không truyền employeeId = gửi mọi phiếu chưa gửi / vừa tính lại. */

@@ -348,6 +348,8 @@ model Payslip {
   leaveDaysPaidOut Float @default(0) // Số ngày phép tồn quy đổi ra công (tháng 12 / tháng nghỉ việc) — tính vào Tổng công
   leavePayout      Int   @default(0) // Tiền tương ứng của phép tồn quy đổi (chỉ để hiển thị, ĐÃ nằm trong Lương theo tổng công)
   bonusUnits       Float @default(0) // Công bù do Admin nhập tay (vượt công của ngày) — tính vào Tổng công, chỉ nhân với lương base
+  // Admin tick quy đổi phép tồn ngay ở tháng này (VD nhân sự xin nghỉ giữa năm còn dư phép). Tháng 12 và tháng nghỉ việc thì tự quy đổi, không cần tick
+  payoutLeave      Boolean @default(false)
   netPay           Int // Thực nhận
 
   // Kế toán điền trên Sheet rồi sync ngược (chỉ Admin thấy)

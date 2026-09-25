@@ -30,6 +30,7 @@ export async function LeaveYearCard({ employeeId, year, closed = false }: { empl
           Phép tích lũy từ tháng {leave.eligibleFrom.startsWith("0000") ? "đầu năm" : `${leave.eligibleFrom.slice(5)}/${leave.eligibleFrom.slice(0, 4)}`} (sau thử việc), không nghỉ ứng trước.
           Phép tồn cuối năm <b>{leave.toPayOut} ngày</b> sẽ được quy đổi ra tiền ở phiếu lương tháng 12/{year} (lương base ÷ ngày công tháng × số ngày tồn).
           {leave.adjustment !== 0 && <> Trong đó Admin đã điều chỉnh <b>{leave.adjustment > 0 ? "+" : ""}{leave.adjustment} ngày</b>.</>}
+          {leave.paidOut > 0 && <> Đã quy đổi ra lương <b>{leave.paidOut} ngày</b> (nghỉ việc / quy đổi giữa năm) — không trả lại lần nữa.</>}
           {leave.pending > 0 && <> Còn {leave.pending} ngày đang chờ duyệt — duyệt xong mới tính là đã nghỉ.</>}
         </div>
         {adjustments.length > 0 && (

@@ -61,10 +61,11 @@ export type LeaveBalance = {
   uptoMonth: number; // Tích lũy tính đến hết tháng này của năm (0 = năm chưa bắt đầu)
   accrued: number; // Phép đã tích lũy (gồm cả điều chỉnh của Admin)
   adjustment: number; // Phần Admin điều chỉnh (+/−) đã nằm trong accrued
+  paidOut: number; // Phép đã quy đổi ra lương trong năm (tháng nghỉ việc, hoặc Admin tick giữa năm) — coi như đã dùng hết
   used: number; // Đã nghỉ (đơn đã duyệt)
   pending: number; // Đang chờ duyệt (tạm giữ để không nghỉ vượt)
-  remaining: number; // Còn lại = tích lũy − đã nghỉ − đang chờ
-  toPayOut: number; // Phép tồn sẽ quy đổi ra lương = tích lũy − đã nghỉ (không tính đơn đang chờ)
+  remaining: number; // Còn lại = tích lũy − đã nghỉ − đang chờ − đã quy đổi ra lương
+  toPayOut: number; // Phép tồn có thể quy đổi ra lương = tích lũy − đã nghỉ − đã quy đổi trước đó (không tính đơn đang chờ)
   eligibleFrom: string; // Tháng đầu tiên được tích lũy phép
 };
 
@@ -73,8 +74,12 @@ export type LeaveBalance = {
  * không nghỉ ứng trước; tồn cuối năm quy đổi ra lương. `uptoMonth` mặc định = tháng hiện tại (năm cũ = 12).
  * Chỉ dùng 3 truy vấn cho cả danh sách nên dùng được ở trang danh sách nhân sự.
  */
-export async function annualLeaveBalances(employeeIds: string[], year: number, uptoMonth?: number) {
-  const [employees, policy, requests, isWork, adjustments] = await Promise.all([
+/**
+ * `excludePayoutMonth`: bỏ qua phần quy đổi của phiếu lương tháng đó khi trừ "đã quy đổi" — dùng khi TÍNH LẠI chính phiếu tháng đó
+ * (tránh tự trừ chính mình, để tính lại nhiều lần vẫn ra cùng kết quả).
+ */
+export async function annualLeaveBalances(employeeIds: string[], year: number, uptoMonth?: number, options: { excludePayoutMonth?: string } = {}) {
+  const [employees, policy, requests, isWork, adjustments, payouts] = await Promise.all([
     prisma.employee.findMany({ where: { id: { in: employeeIds } }, select: { id: true, joinedAt: true, probationMonths: true } }),
     getSetting("leavePolicy"),
     prisma.request.findMany({
@@ -83,7 +88,14 @@ export async function annualLeaveBalances(employeeIds: string[], year: number, u
     }),
     getDayUnitChecker(`${year}-01-01`, `${year}-12-31`),
     prisma.leaveAdjustment.findMany({ where: { employeeId: { in: employeeIds }, year }, select: { employeeId: true, days: true } }),
+    // Phép đã quy đổi ra lương ở các phiếu lương trong năm (tháng nghỉ việc, hoặc Admin tick giữa năm)
+    prisma.payslip.findMany({
+      where: { employeeId: { in: employeeIds }, month: { startsWith: `${year}-`, ...(options.excludePayoutMonth ? { not: options.excludePayoutMonth } : {}) }, leaveDaysPaidOut: { gt: 0 } },
+      select: { employeeId: true, leaveDaysPaidOut: true },
+    }),
   ]);
+  const paidOut = new Map<string, number>();
+  for (const p of payouts) paidOut.set(p.employeeId, (paidOut.get(p.employeeId) ?? 0) + p.leaveDaysPaidOut);
   const adjusted = new Map<string, number>();
   for (const a of adjustments) adjusted.set(a.employeeId, (adjusted.get(a.employeeId) ?? 0) + a.days);
   const upto = uptoMonth ?? accrualUptoMonth(year, todayVN().slice(0, 7));
@@ -105,15 +117,17 @@ export async function annualLeaveBalances(employeeIds: string[], year: number, u
     const joinDay = e.joinedAt ? Number(dayOf(e.joinedAt).slice(8)) : null; // ngày vào làm quyết định phép của tháng đầu (trước / sau ngày 10)
     const accrued = Math.round((annualLeaveAccrued({ year, uptoMonth: upto, eligibleFrom, policy, joinDay }) + adjustment) * 100) / 100;
     const u = used.get(e.id) ?? { approved: 0, pending: 0 };
+    const cashed = Math.round((paidOut.get(e.id) ?? 0) * 100) / 100;
     out.set(e.id, {
       year,
       uptoMonth: upto,
       accrued,
       adjustment,
+      paidOut: cashed,
       used: u.approved,
       pending: u.pending,
-      remaining: Math.round((accrued - u.approved - u.pending) * 100) / 100,
-      toPayOut: leaveDaysToPayOut(accrued, u.approved),
+      remaining: Math.round((accrued - u.approved - u.pending - cashed) * 100) / 100,
+      toPayOut: leaveDaysToPayOut(accrued, u.approved + cashed),
       eligibleFrom,
     });
   }
@@ -146,7 +160,7 @@ export async function createRequest(actor: Actor, input: RequestInput): Promise<
       const last = input.dateTo.startsWith(String(year)) ? input.dateTo : `${year}-12-31`;
       const uptoMonth = Number(last.slice(5, 7));
       const bal = await annualLeaveBalance(actor.id, year, uptoMonth);
-      const shortage = annualLeaveShortage({ year, accrued: bal.accrued, used: bal.used + bal.pending, needed, eligibleFrom: bal.eligibleFrom, leaveFromMonth: first.slice(0, 7), uptoMonth });
+      const shortage = annualLeaveShortage({ year, accrued: bal.accrued, used: bal.used + bal.pending + bal.paidOut, needed, eligibleFrom: bal.eligibleFrom, leaveFromMonth: first.slice(0, 7), uptoMonth });
       if (shortage) return fail(shortage);
     }
   }
