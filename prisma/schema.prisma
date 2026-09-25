@@ -338,6 +338,10 @@ model Payslip {
   calculatedAt DateTime      @default(now())
   sentAt       DateTime?
 
+  // Bản phiếu nhân sự thấy (chụp lại lúc Gửi / Gửi lại). "Tính lại" chỉ đổi các cột ở trên,
+  // nhân sự vẫn thấy bản này cho tới khi Admin bấm "Gửi lại" (§6.4).
+  publishedData Json?
+
   @@unique([employeeId, month])
   @@index([month])
 }

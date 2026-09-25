@@ -213,15 +213,26 @@ function summarizeDays(days: DayView[], standardDays: number) {
   };
 }
 
-/** Tổng hợp công tháng của mọi nhân sự đang làm — cho bảng tổng quan của Admin. */
-export async function getMonthSummaries(month: string) {
+/**
+ * Tổng hợp công tháng của mọi nhân sự đang làm — cho bảng tổng quan của Admin.
+ * forPayroll: thêm cả người đã nghỉ trong/sau tháng đó (vẫn cần phiếu lương tháng cuối), bỏ người vào làm sau tháng đó.
+ */
+export async function getMonthSummaries(month: string, options: { forPayroll?: boolean } = {}) {
   const { gte, lt } = monthRange(month);
+  const employeeWhere = options.forPayroll
+    ? {
+        AND: [
+          { OR: [{ status: "ACTIVE" as const }, { leftAt: { gte } }] },
+          { OR: [{ joinedAt: null }, { joinedAt: { lt } }] },
+        ],
+      }
+    : { status: "ACTIVE" as const };
   const [calendar, employees, rows, requests, config] = await Promise.all([
     loadMonthCalendar(month),
     prisma.employee.findMany({
-      where: { status: "ACTIVE" },
+      where: employeeWhere,
       orderBy: { code: "asc" },
-      select: { id: true, code: true, name: true, attendanceExempt: true, team: { select: { name: true } } },
+      select: { id: true, code: true, name: true, attendanceExempt: true, parkingOutside: true, team: { select: { name: true } } },
     }),
     prisma.dailyAttendance.findMany({
       where: { date: { gte, lt } },
@@ -252,6 +263,7 @@ export async function getMonthSummaries(month: string) {
         name: e.name,
         team: e.team?.name ?? null,
         exempt: e.attendanceExempt,
+        parkingOutside: e.parkingOutside,
         workUnits: e.attendanceExempt ? elapsedWorkdays : Math.round(mine.reduce((s, r) => s + r.workUnits, 0) * 100) / 100,
         lateDays: mine.filter((r) => r.lateMinutes > 0).length,
         latePenalty: mine.reduce((s, r) => (excused.has(r.date.toISOString().slice(0, 10)) ? s : s + r.latePenalty), 0),
