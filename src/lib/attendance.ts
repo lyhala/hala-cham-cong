@@ -2,7 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 import { todayVN } from "@/lib/dates";
-import { calcDay, isWorkday } from "@/lib/attendance-rules";
+import { calcDay, isWorkday, pickExemptDays } from "@/lib/attendance-rules";
 import { getSetting } from "@/lib/settings-db";
 
 /** Khoảng [00:00, 24:00) theo giờ VN của 1 ngày "YYYY-MM-DD", dạng mốc UTC. */
@@ -40,17 +40,62 @@ export async function refreshDailyAttendance(employeeId: string, day: string) {
 
 /** Tính công + phạt của 1 ngày theo lịch làm việc và cấu hình hiện tại (§3.2, §3.3). */
 async function calcForDay(employeeId: string, day: string, checkIn: Date | null, checkOut: Date | null) {
-  const [schedule, penaltyConfig, override, employee] = await Promise.all([
+  const [schedule, penaltyConfig, override, employee, excusedDays] = await Promise.all([
     getSetting("workSchedule"),
     getSetting("latePenalty"),
     prisma.workCalendarDay.findUnique({ where: { date: new Date(`${day}T00:00:00Z`) } }),
     prisma.employee.findUnique({ where: { id: employeeId }, select: { attendanceExempt: true } }),
+    lateExcusedDays(employeeId, day.slice(0, 7)),
   ]);
   return calcDay(
-    { checkIn, checkOut, workday: isWorkday(day, schedule, override), exempt: employee?.attendanceExempt ?? false },
+    {
+      checkIn,
+      checkOut,
+      workday: isWorkday(day, schedule, override),
+      exempt: employee?.attendanceExempt ?? false,
+      lateExcused: excusedDays.has(day),
+    },
     schedule,
     penaltyConfig,
   );
+}
+
+/**
+ * Các ngày đi muộn được miễn của 1 nhân sự trong tháng (§3.3): đơn ĐI MUỘN đã duyệt xong, chưa bị xóa,
+ * lấy đúng số suất miễn/tháng có ngày đi muộn sớm nhất.
+ */
+async function lateExcusedDays(employeeId: string, month: string) {
+  const [y, m] = month.split("-").map(Number);
+  const [config, requests] = await Promise.all([
+    getSetting("latePenalty"),
+    prisma.request.findMany({
+      where: {
+        employeeId,
+        type: "LATE",
+        status: "APPROVED",
+        deletedAt: null,
+        dateFrom: { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) },
+      },
+      select: { dateFrom: true },
+    }),
+  ]);
+  const days = requests.flatMap((r) => (r.dateFrom ? [r.dateFrom.toISOString().slice(0, 10)] : []));
+  return pickExemptDays(days, config.freeExemptionsPerMonth);
+}
+
+/**
+ * Tính lại công 1 nhân sự trong 1 tháng — gọi sau khi đơn đi muộn được duyệt / bị xóa,
+ * vì suất miễn phạt có thể dồn sang đơn khác.
+ */
+export async function recalcEmployeeMonth(employeeId: string, month: string) {
+  const [y, m] = month.split("-").map(Number);
+  const rows = await prisma.dailyAttendance.findMany({
+    where: { employeeId, isManual: false, date: { gte: new Date(Date.UTC(y, m - 1, 1)), lt: new Date(Date.UTC(y, m, 1)) } },
+  });
+  for (const row of rows) {
+    const calc = await calcForDay(row.employeeId, row.date.toISOString().slice(0, 10), row.checkIn, row.checkOut);
+    await prisma.dailyAttendance.update({ where: { id: row.id }, data: calc });
+  }
 }
 
 /**

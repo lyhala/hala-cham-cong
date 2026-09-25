@@ -57,6 +57,7 @@ export type DayInput = {
   checkOut: Date | null;
   workday: boolean;
   exempt: boolean; // Cờ "miễn chấm công"
+  lateExcused?: boolean; // Ngày này có đơn đi muộn được miễn (nằm trong 3 suất/tháng)
 };
 
 export type DayResult = {
@@ -75,7 +76,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  *   Thiếu thì tính theo tỷ lệ: giờ làm thực = (checkout − giờ đến) − nghỉ trưa, chia 7.5h.
  * - Đến sớm hơn giờ vào ca thì lấy giờ vào ca làm mốc (không có chuyện về sớm hơn 17:30).
  * - Có checkin mà chưa có checkout: 0 công (chưa đủ dữ liệu; Admin sửa tay được).
- * - Đến sau 10h: trừ thêm 1/2 công vào công thực.
+ * - Đến sau 10h mà KHÔNG có đơn được miễn: trừ thêm 1/2 công vào công thực, không phạt tiền.
+ *   Có đơn được miễn thì tính công bình thường theo giờ thực tế (VD đến 10h, về 17h30 = 6/7.5 công; muốn đủ công phải ở lại tới 19h).
  */
 export function calcDay(input: DayInput, schedule: WorkSchedule, config: LatePenaltyConfig): DayResult {
   const none: DayResult = { workUnits: 0, lateMinutes: 0, latePenalty: 0, halfDayDeducted: false };
@@ -84,7 +86,8 @@ export function calcDay(input: DayInput, schedule: WorkSchedule, config: LatePen
   if (!input.checkIn) return none;
 
   const late = calcLate(input.checkIn, schedule, config);
-  const base = { lateMinutes: late.lateMinutes, latePenalty: late.penalty, halfDayDeducted: late.halfDayDeducted };
+  const halfDayDeducted = late.halfDayDeducted && !input.lateExcused;
+  const base = { lateMinutes: late.lateMinutes, latePenalty: late.penalty, halfDayDeducted };
   if (!input.checkOut) return { ...base, workUnits: 0 };
 
   const shiftStart = toMinutes(schedule.morningStart);
@@ -93,7 +96,7 @@ export function calcDay(input: DayInput, schedule: WorkSchedule, config: LatePen
   const spanHours = (input.checkOut.getTime() - effectiveStartMs) / 3_600_000;
   const workedHours = Math.min(schedule.hoursPerDay, Math.max(0, spanHours - schedule.lunchBreakHours));
   let units = workedHours / schedule.hoursPerDay;
-  if (late.halfDayDeducted) units = Math.max(0, units - 0.5);
+  if (halfDayDeducted) units = Math.max(0, units - 0.5);
   return { ...base, workUnits: round2(units) };
 }
 
