@@ -61,7 +61,15 @@ export function CreateTeamForm() {
 }
 
 // Đổi tên / đổi loại / xóa 1 team (hiện trong thẻ team ở sơ đồ tổ chức)
-export function TeamEditor({ team }: { team: { id: string; name: string; type: string; memberCount: number } }) {
+type PersonOption = { id: string; name: string; code: string };
+
+export function TeamEditor({
+  team,
+  people,
+}: {
+  team: { id: string; name: string; type: string; memberCount: number; displayLeaderId: string | null };
+  people: PersonOption[];
+}) {
   const [open, setOpen] = useState(false);
   const [state, dispatch, pending] = useActionState(async (prev: Awaited<ReturnType<typeof updateTeam>>, fd: FormData) => {
     const result = await updateTeam(prev, fd);
@@ -92,6 +100,18 @@ export function TeamEditor({ team }: { team: { id: string; name: string; type: s
           <input id={`team-name-${team.id}`} name="name" defaultValue={team.name} required />
         </div>
         <TypeRadios defaultValue={team.type} />
+        <div className="field">
+          <label htmlFor={`team-leader-${team.id}`}>Leader hiển thị</label>
+          <select id={`team-leader-${team.id}`} name="displayLeaderId" defaultValue={team.displayLeaderId ?? ""}>
+            <option value="">— Theo Leader phân quyền —</option>
+            {people.map((p) => (
+              <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+            ))}
+          </select>
+          <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>
+            Chỉ để hiển thị trên sơ đồ và hồ sơ nhân sự, không cấp quyền duyệt đơn. Chọn được bất kỳ ai (VD CEO).
+          </div>
+        </div>
         {state?.error && <div className="warn-box">{state.error}</div>}
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn sm primary" type="submit" disabled={pending}>{pending ? "..." : "Lưu"}</button>

@@ -5,11 +5,18 @@ import { prisma } from "@/lib/db";
 import { requireUser } from "@/lib/auth/session";
 import { ROLE_LABEL } from "@/lib/nav";
 
+function leaderText(myId: string, leader: { id: string; name: string } | null) {
+  if (!leader) return "Chưa gán";
+  return leader.id === myId ? `${leader.name} (bạn)` : leader.name;
+}
+
 export default async function ProfilePage() {
   const user = await requireUser();
   const me = await prisma.employee.findUniqueOrThrow({
     where: { id: user.id },
-    include: { team: { include: { leader: { select: { name: true } } } }, photo: { select: { updatedAt: true } } },
+    include: {
+      team: { include: { leader: { select: { id: true, name: true } }, displayLeader: { select: { id: true, name: true } } } }, photo: { select: { updatedAt: true } },
+    },
   });
 
   const rows: [string, React.ReactNode][] = [
@@ -18,7 +25,8 @@ export default async function ProfilePage() {
     ["Số điện thoại", me.phone ?? "—"],
     ["Địa chỉ", me.address ?? "—"],
     ["Team", me.team?.name ?? <span style={{ color: "var(--danger)" }}>Chưa chọn</span>],
-    ["Leader", me.team?.leader?.name ?? "Chưa gán"],
+    // "Leader hiển thị" của team (spec §2); chưa đặt thì lấy Leader phân quyền
+    ["Leader của bạn", leaderText(me.id, me.team?.displayLeader ?? me.team?.leader ?? null)],
     ["Role", ROLE_LABEL[user.role]],
   ];
 

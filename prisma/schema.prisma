@@ -99,6 +99,11 @@ model Team {
   leaderId String?   @unique
   leader   Employee? @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
 
+  // "Leader hiển thị" (spec §2): chỉ để hiển thị trên sơ đồ + hồ sơ cá nhân, KHÔNG cấp quyền.
+  // Độc lập với role Leader; 1 người được làm Leader hiển thị nhiều team, kể cả CEO / người ngoài team.
+  displayLeaderId String?
+  displayLeader   Employee? @relation("TeamDisplayLeader", fields: [displayLeaderId], references: [id], onDelete: SetNull)
+
   members          Employee[] @relation("TeamMembers")
   inChargeProjects Project[]
 
@@ -141,7 +146,8 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  leadsTeam Team? @relation("TeamLeader")
+  leadsTeam         Team?  @relation("TeamLeader")
+  displayLeadsTeams Team[] @relation("TeamDisplayLeader")
 
   photo             EmployeePhoto?
   sessions          Session[]

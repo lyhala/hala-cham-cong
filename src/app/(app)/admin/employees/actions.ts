@@ -413,12 +413,19 @@ export async function updateTeam(_: ActionState, fd: FormData): Promise<ActionSt
   const parsed = TeamSchema.safeParse({ name: fd.get("name") ?? "", type: fd.get("type") ?? undefined });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
-  const before = await prisma.team.findUnique({ where: { id } });
+  const before = await prisma.team.findUnique({ where: { id }, include: { displayLeader: { select: { name: true } } } });
   if (!before) return { error: "Không tìm thấy team" };
+
+  // Leader hiển thị: chọn bất kỳ nhân sự đang làm (không cần thuộc team, không đổi quyền)
+  const displayLeaderId = String(fd.get("displayLeaderId") ?? "") || null;
+  const displayLeader = displayLeaderId
+    ? await prisma.employee.findFirst({ where: { id: displayLeaderId, status: "ACTIVE" }, select: { name: true } })
+    : null;
+  if (displayLeaderId && !displayLeader) return { error: "Không tìm thấy nhân sự được chọn làm Leader hiển thị" };
 
   try {
     await prisma.$transaction(async (tx) => {
-      await tx.team.update({ where: { id }, data: parsed.data });
+      await tx.team.update({ where: { id }, data: { ...parsed.data, displayLeaderId } });
       // Team hỗ trợ không được làm Team in-charge → gỡ khỏi các dự án đang in-charge
       if (parsed.data.type === "SUPPORT") {
         await tx.project.updateMany({ where: { inChargeTeamId: id }, data: { inChargeTeamId: null } });
@@ -433,6 +440,9 @@ export async function updateTeam(_: ActionState, fd: FormData): Promise<ActionSt
   if (before.name !== parsed.data.name) changes.push(`tên "${before.name}" → "${parsed.data.name}"`);
   if (before.type !== parsed.data.type) {
     changes.push(`loại ${TEAM_TYPE_LABEL[before.type]} → ${TEAM_TYPE_LABEL[parsed.data.type]}`);
+  }
+  if (before.displayLeaderId !== displayLeaderId) {
+    changes.push(`Leader hiển thị: ${before.displayLeader?.name ?? "trống"} → ${displayLeader?.name ?? "trống"}`);
   }
   if (changes.length) {
     await logAudit({

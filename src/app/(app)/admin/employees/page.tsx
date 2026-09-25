@@ -6,6 +6,7 @@ import { ROLE_LABEL } from "@/lib/nav";
 import type { Prisma } from "@/generated/prisma/client";
 import { removeFromTeam } from "./actions";
 import { ActionButton } from "./_components/ActionButton";
+import { AutoSubmitForm } from "./_components/AutoSubmitForm";
 import { CreateTeamForm, TeamEditor } from "./_components/TeamForms";
 
 const TEAM_TYPE_BADGE = {
@@ -26,7 +27,15 @@ export default async function EmployeesPage(props: PageProps<"/admin/employees">
         <Link className={`btn sm ${tab === "org" ? "primary" : ""}`} href="/admin/employees?tab=org">Sơ đồ tổ chức</Link>
       </div>
       {tab === "list" ? (
-        <EmployeeList q={typeof sp.q === "string" ? sp.q : ""} status={sp.status === "resigned" ? "resigned" : "active"} />
+        <EmployeeList
+          filters={{
+            q: str(sp.q),
+            status: sp.status === "resigned" ? "resigned" : "active",
+            team: str(sp.team),
+            role: str(sp.role),
+            account: str(sp.account),
+          }}
+        />
       ) : (
         <OrgChart />
       )}
@@ -36,39 +45,85 @@ export default async function EmployeesPage(props: PageProps<"/admin/employees">
 
 // ───────────────────────── Tab Danh sách ─────────────────────────
 
-async function EmployeeList({ q, status }: { q: string; status: "active" | "resigned" }) {
-  const where: Prisma.EmployeeWhereInput = {
-    status: status === "active" ? "ACTIVE" : "RESIGNED",
-    ...(q
-      ? {
-          OR: [
-            { name: { contains: q, mode: "insensitive" } },
-            { code: { contains: q, mode: "insensitive" } },
-            { email: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : {}),
-  };
-  const [list, resignedCount] = await Promise.all([
-    prisma.employee.findMany({ where, include: { team: true, photo: { select: { updatedAt: true } } }, orderBy: { code: "asc" } }),
+function str(v: string | string[] | undefined) {
+  return typeof v === "string" ? v : "";
+}
+
+type Filters = { q: string; status: "active" | "resigned"; team: string; role: string; account: string };
+
+const ACCOUNT_FILTERS: Record<string, { label: string; where: Prisma.EmployeeWhereInput }> = {
+  logged_in: { label: "Đã đăng nhập", where: { isLocked: false, email: { not: null }, lastLoginAt: { not: null } } },
+  never: { label: "Chưa đăng nhập", where: { isLocked: false, email: { not: null }, lastLoginAt: null } },
+  no_email: { label: "Chưa có email", where: { email: null } },
+  locked: { label: "Đã khóa", where: { isLocked: true } },
+};
+
+async function EmployeeList({ filters }: { filters: Filters }) {
+  const { q, status, team, role, account } = filters;
+  const and: Prisma.EmployeeWhereInput[] = [{ status: status === "active" ? "ACTIVE" : "RESIGNED" }];
+  if (q) {
+    and.push({
+      OR: [
+        { name: { contains: q, mode: "insensitive" } },
+        { code: { contains: q, mode: "insensitive" } },
+        { email: { contains: q, mode: "insensitive" } },
+      ],
+    });
+  }
+  if (team) and.push({ teamId: team === "none" ? null : team });
+  if (role === "none") and.push({ role: null });
+  else if (role === "EMPLOYEE" || role === "LEADER" || role === "ADMIN") and.push({ role });
+  if (ACCOUNT_FILTERS[account]) and.push(ACCOUNT_FILTERS[account].where);
+
+  const [list, resignedCount, teams] = await Promise.all([
+    prisma.employee.findMany({
+      where: { AND: and },
+      include: { team: true, photo: { select: { updatedAt: true } } },
+      orderBy: { code: "asc" },
+    }),
     prisma.employee.count({ where: { status: "RESIGNED" } }),
+    prisma.team.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true } }),
   ]);
+  const filtered = Boolean(q || team || role || account);
 
   return (
     <>
-      <form className="toolbar" action="/admin/employees">
+      <AutoSubmitForm className="toolbar" action="/admin/employees">
         <input name="q" defaultValue={q} placeholder="Tìm tên, Mã NV, email..." style={{ flex: "1 1 180px" }} />
-        <select name="status" defaultValue={status}>
-          <option value="active">Đang làm</option>
-          <option value="resigned">Đã nghỉ ({resignedCount})</option>
-        </select>
-        <button className="btn sm" type="submit">Lọc</button>
+        <button className="btn sm" type="submit">Tìm</button>
         <Link className="btn primary sm" href="/admin/employees/new" style={{ marginLeft: "auto" }}>+ Thêm nhân sự</Link>
-      </form>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", width: "100%" }}>
+          <select name="status" defaultValue={status} aria-label="Trạng thái làm việc">
+            <option value="active">Đang làm</option>
+            <option value="resigned">Đã nghỉ ({resignedCount})</option>
+          </select>
+          <select name="team" defaultValue={team} aria-label="Team">
+            <option value="">Mọi team</option>
+            {teams.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}</option>
+            ))}
+            <option value="none">Chưa chọn team</option>
+          </select>
+          <select name="role" defaultValue={role} aria-label="Role">
+            <option value="">Mọi role</option>
+            <option value="EMPLOYEE">Nhân viên</option>
+            <option value="LEADER">Leader</option>
+            <option value="ADMIN">Admin</option>
+            <option value="none">Chưa chọn role</option>
+          </select>
+          <select name="account" defaultValue={account} aria-label="Tài khoản">
+            <option value="">Mọi trạng thái tài khoản</option>
+            {Object.entries(ACCOUNT_FILTERS).map(([k, v]) => (
+              <option key={k} value={k}>{v.label}</option>
+            ))}
+          </select>
+          {filtered && <Link className="btn sm" href={status === "resigned" ? "/admin/employees?status=resigned" : "/admin/employees"}>✕ Bỏ lọc</Link>}
+        </div>
+      </AutoSubmitForm>
       <div className="subtitle" style={{ marginBottom: 10 }}>{list.length} người</div>
 
       {list.length === 0 ? (
-        <div className="card empty">{q ? "Không tìm thấy ai" : "Chưa có nhân sự nào. Bấm \"+ Thêm nhân sự\" để bắt đầu."}</div>
+        <div className="card empty">{filtered ? "Không có ai khớp điều kiện lọc" : "Chưa có nhân sự nào. Bấm \"+ Thêm nhân sự\" để bắt đầu."}</div>
       ) : (
         <div className="table-wrap">
           <table>
@@ -122,11 +177,12 @@ async function EmployeeList({ q, status }: { q: string; status: "active" | "resi
 // ───────────────────────── Tab Sơ đồ tổ chức ─────────────────────────
 
 async function OrgChart() {
-  const [teams, ceo, unassigned] = await Promise.all([
+  const [teams, ceo, unassigned, people] = await Promise.all([
     prisma.team.findMany({
       orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
       include: {
         leader: { select: { id: true, name: true } },
+        displayLeader: { select: { id: true, name: true } },
         members: {
           where: { status: "ACTIVE" },
           orderBy: { name: "asc" },
@@ -140,6 +196,7 @@ async function OrgChart() {
       orderBy: { name: "asc" },
       include: { photo: { select: { updatedAt: true } } },
     }),
+    prisma.employee.findMany({ where: { status: "ACTIVE" }, orderBy: { name: "asc" }, select: { id: true, name: true, code: true } }),
   ]);
 
   return (
@@ -175,7 +232,12 @@ async function OrgChart() {
                   {t.name} {TEAM_TYPE_BADGE[t.type]}
                 </div>
                 <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 2 }}>
-                  {t.members.length} người · {t.leader ? `Leader: ${t.leader.name}` : <span className="missing">Chưa có Leader</span>}
+                  {t.members.length} người ·{" "}
+                  {(t.displayLeader ?? t.leader) ? (
+                    `Leader: ${(t.displayLeader ?? t.leader)!.name}`
+                  ) : (
+                    <span className="missing">Chưa có Leader</span>
+                  )}
                 </div>
               </div>
               <span className="chev">▸</span>
@@ -187,7 +249,7 @@ async function OrgChart() {
                   <Avatar id={m.id} name={m.name} photoUpdatedAt={m.photo?.updatedAt} size={24} />
                   <Link href={`/admin/employees/${m.id}`}>
                     {m.name}
-                    {t.leader?.id === m.id && <> <span className="badge warn xs">Leader</span></>}
+                    {(t.displayLeader ?? t.leader)?.id === m.id && <> <span className="badge warn xs">Leader</span></>}
                     {m.isCEO && <> <span className="badge ok xs">CEO</span></>}
                   </Link>
                   <ActionButton
@@ -204,7 +266,10 @@ async function OrgChart() {
               <Link className="btn sm" style={{ marginTop: 6 }} href={`/admin/employees/new?team=${t.id}`}>
                 + Thêm vào team này
               </Link>
-              <TeamEditor team={{ id: t.id, name: t.name, type: t.type, memberCount: t.members.length }} />
+              <TeamEditor
+                team={{ id: t.id, name: t.name, type: t.type, memberCount: t.members.length, displayLeaderId: t.displayLeaderId }}
+                people={people}
+              />
             </div>
           </details>
         ))}
