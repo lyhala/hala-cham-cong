@@ -20,6 +20,8 @@ export type ActionState =
   | {
       ok?: boolean;
       error?: string;
+      /** Link đi kèm lỗi, VD trỏ thẳng tới hồ sơ đang giữ email trùng (kể cả khi hồ sơ đó đang bị lọc ẩn) */
+      errorLink?: { href: string; label: string };
       message?: string;
       tempPassword?: string;
       employeeId?: string;
@@ -50,18 +52,26 @@ function isUniqueError(e: unknown, field: string) {
 /**
  * Thông báo rõ khi trùng email: nếu email đó thuộc người ĐÃ NGHỈ (hồ sơ vẫn giữ để tính lương
  * tháng cuối, spec §10), nói rõ để Admin biết vào hồ sơ đó xóa hẳn hoặc cho đi làm lại, thay vì
- * chỉ báo "đã được dùng" khiến tưởng nhầm người đó vẫn đang làm.
+ * chỉ báo "đã được dùng" khiến tưởng nhầm người đó vẫn đang làm. Kèm link đi thẳng tới hồ sơ đó —
+ * hồ sơ Đã nghỉ bị ẩn khỏi danh sách mặc định nên nếu chỉ báo tên, Admin sẽ không tìm ra được.
  */
-async function emailConflictError(email: string | null, excludeId?: string) {
-  if (!email) return `Email đã được dùng cho người khác`;
+async function emailConflictError(
+  email: string | null,
+  excludeId?: string,
+): Promise<{ error: string; errorLink?: { href: string; label: string } }> {
+  if (!email) return { error: `Email đã được dùng cho người khác` };
   const existing = await prisma.employee.findFirst({
     where: { email, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
   });
-  if (!existing) return `Email ${email} đã được dùng cho người khác`;
+  if (!existing) return { error: `Email ${email} đã được dùng cho người khác` };
+  const link = { href: `/admin/employees/${existing.id}`, label: `Mở hồ sơ ${existing.name} (${existing.code})` };
   if (existing.status === "RESIGNED") {
-    return `Email ${email} đang thuộc hồ sơ ĐÃ NGHỈ của ${existing.name} (${existing.code}). Vào hồ sơ người đó để "Xóa hẳn" (nếu chắc chắn không cần dữ liệu cũ) hoặc "Đi làm lại" rồi mới dùng email này cho người khác.`;
+    return {
+      error: `Email ${email} đang thuộc hồ sơ ĐÃ NGHỈ của ${existing.name} (${existing.code}) — hồ sơ này đang ẩn khỏi danh sách "Đang làm" nên bạn không tìm thấy qua tìm kiếm thường. Vào hồ sơ đó để "Xóa hẳn" (nếu chắc chắn không cần dữ liệu cũ, VD đã xuất lương tháng cuối) hoặc "Đi làm lại" rồi mới dùng email này cho người khác.`,
+      errorLink: link,
+    };
   }
-  return `Email ${email} đang được dùng cho ${existing.name} (${existing.code}, đang làm)`;
+  return { error: `Email ${email} đang được dùng cho ${existing.name} (${existing.code}, đang làm)`, errorLink: link };
 }
 
 const optionalText = z
@@ -154,7 +164,7 @@ export async function createEmployee(_: ActionState, fd: FormData): Promise<Acti
   } catch (e) {
     if (e instanceof LeaderConflictError) return { confirmLeader: e.conflict };
     if (isUniqueError(e, "code")) return { error: `Mã NV ${data.code} đã tồn tại` };
-    if (isUniqueError(e, "email")) return { error: await emailConflictError(data.email) };
+    if (isUniqueError(e, "email")) return await emailConflictError(data.email);
     throw e;
   }
 }
@@ -205,7 +215,7 @@ export async function updateEmployee(_: ActionState, fd: FormData): Promise<Acti
   } catch (e) {
     if (e instanceof LeaderConflictError) return { confirmLeader: e.conflict };
     if (isUniqueError(e, "code")) return { error: `Mã NV ${data.code} đã tồn tại` };
-    if (isUniqueError(e, "email")) return { error: await emailConflictError(data.email, id) };
+    if (isUniqueError(e, "email")) return await emailConflictError(data.email, id);
     throw e;
   }
 }

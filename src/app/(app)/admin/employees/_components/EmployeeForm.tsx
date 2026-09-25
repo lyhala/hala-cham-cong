@@ -94,7 +94,16 @@ function EmployeeFormInner({ mode, values, teams, onAddAnother }: Props & { onAd
     >
       {mode === "edit" && <input type="hidden" name="id" value={values.id} />}
 
-      {state?.error && <div className="warn-box">{state.error}</div>}
+      {state?.error && (
+        <div className="warn-box">
+          {state.error}
+          {state.errorLink && (
+            <div style={{ marginTop: 8 }}>
+              <Link href={state.errorLink.href} className="btn sm">{state.errorLink.label} →</Link>
+            </div>
+          )}
+        </div>
+      )}
       {state?.ok && state.message && <div className="ok-box">{state.message}</div>}
       {state?.confirmLeader && (
         <div className="warn-box" style={{ color: "var(--text)" }}>
