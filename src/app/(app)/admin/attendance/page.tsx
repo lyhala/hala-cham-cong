@@ -84,32 +84,37 @@ async function EmployeeView({ month, employee, selectedDay }: { month: string; e
         {employee.name} <span style={{ color: "var(--text-3)", fontSize: 12 }}>{employee.code}</span>
       </div>
       {exempt && <div className="info-box">Nhân sự này được miễn chấm công: mọi ngày làm việc tự tính đủ công, không cần sửa.</div>}
-      <div className="grid3" style={{ marginBottom: 14 }}>
+      <div className="stat-row">
         <div className="card"><div className="stat-label">Công thực</div><div className="stat-value">{totals.workUnits}<span style={{ fontSize: 12, color: "var(--text-3)" }}> / {totals.standardDays}</span></div></div>
         <div className="card"><div className="stat-label">Số lần đi muộn</div><div className="stat-value">{totals.lateDays}</div></div>
         <div className="card"><div className="stat-label">Tiền phạt đi muộn</div><div className="stat-value">{fmtMoney(totals.latePenalty)}<span style={{ fontSize: 12, color: "var(--text-3)" }}>đ</span></div></div>
       </div>
-      <AttendanceCalendar
-        days={days}
-        today={today}
-        selected={selected.day}
-        hrefFor={(d) => `/admin/attendance?month=${month}&employee=${employee.id}&day=${d}`}
-      />
-      <CalendarLegend />
-      <DayDetail day={selected}>
-        {!exempt && (
-          <EditDayForm
-            key={selected.day}
-            employeeId={employee.id}
-            day={selected.day}
-            checkIn={selected.checkIn ? timeVN(selected.checkIn) : ""}
-            checkOut={selected.checkOut ? timeVN(selected.checkOut) : ""}
-            workUnits={selected.workUnits}
-            note={selected.note ?? ""}
-            isManual={selected.isManual}
+      {/* Lịch bên trái, chi tiết + form sửa bên phải: chọn ngày và sửa công mà không phải cuộn */}
+      <div className="att-layout">
+        <div>
+          <AttendanceCalendar
+            days={days}
+            today={today}
+            selected={selected.day}
+            hrefFor={(d) => `/admin/attendance?month=${month}&employee=${employee.id}&day=${d}`}
           />
-        )}
-      </DayDetail>
+          <CalendarLegend />
+        </div>
+        <DayDetail day={selected}>
+          {!exempt && (
+            <EditDayForm
+              key={selected.day}
+              employeeId={employee.id}
+              day={selected.day}
+              checkIn={selected.checkIn ? timeVN(selected.checkIn) : ""}
+              checkOut={selected.checkOut ? timeVN(selected.checkOut) : ""}
+              workUnits={selected.workUnits}
+              note={selected.note ?? ""}
+              isManual={selected.isManual}
+            />
+          )}
+        </DayDetail>
+      </div>
     </>
   );
 }

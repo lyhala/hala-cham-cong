@@ -42,15 +42,19 @@ export default async function Page(props: PageProps<"/attendance">) {
 
       {exempt && <div className="info-box">Bạn được miễn chấm công: mọi ngày làm việc tự tính đủ công.</div>}
 
-      <div className="grid3" style={{ marginBottom: 14 }}>
+      <div className="stat-row">
         <div className="card"><div className="stat-label">Công thực</div><div className="stat-value">{totals.workUnits}<span style={{ fontSize: 12, color: "var(--text-3)" }}> / {totals.standardDays}</span></div></div>
         <div className="card"><div className="stat-label">Số lần đi muộn</div><div className="stat-value">{totals.lateDays}</div></div>
         <div className="card"><div className="stat-label">Tiền phạt đi muộn</div><div className="stat-value">{fmtMoney(totals.latePenalty)}<span style={{ fontSize: 12, color: "var(--text-3)" }}>đ</span></div></div>
       </div>
 
-      <AttendanceCalendar days={days} today={today} selected={selected.day} hrefFor={(d) => href(month, d)} />
-      <CalendarLegend />
-      <DayDetail day={selected} />
+      <div className="att-layout">
+        <div>
+          <AttendanceCalendar days={days} today={today} selected={selected.day} hrefFor={(d) => href(month, d)} />
+          <CalendarLegend />
+        </div>
+        <DayDetail day={selected} />
+      </div>
     </>
   );
 }

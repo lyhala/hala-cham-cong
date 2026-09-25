@@ -51,9 +51,8 @@ export function CalendarLegend() {
   return (
     <div className="cal-legend">
       <span><i className="ok" /> Đủ công</span>
-      <span><i className="warn" /> Muộn / thiếu công</span>
-      <span><i className="absent" /> Không có dữ liệu</span>
-      <span><i className="off" /> Nghỉ / lễ</span>
+      <span><i className="issue" /> Cần kiểm tra (muộn, thiếu công, nghỉ)</span>
+      <span><i className="off" /> Ngày nghỉ</span>
     </div>
   );
 }
@@ -63,16 +62,15 @@ function statusLabel(d: DayView) {
   switch (d.status) {
     case "future":
       return "Chưa tới";
-    case "absent":
-      return "Không có dữ liệu chấm công";
     case "ok":
       return "Đủ công";
     default:
+      if (!d.checkIn) return "Không có dữ liệu chấm công";
       return d.lateMinutes > 0 ? "Đi muộn" : "Chưa đủ công";
   }
 }
 
-const STATUS_BADGE: Record<DayView["status"], string> = { ok: "ok", warn: "warn", absent: "danger", off: "neutral", future: "neutral" };
+const STATUS_BADGE: Record<DayView["status"], string> = { ok: "ok", issue: "danger", off: "neutral", future: "neutral" };
 
 /** Chi tiết 1 ngày: giờ vào/ra, số công, phút muộn, tiền phạt. */
 export function DayDetail({ day, children }: { day: DayView; children?: React.ReactNode }) {

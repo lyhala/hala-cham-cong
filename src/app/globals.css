@@ -771,45 +771,68 @@ tbody tr:hover td {
 }
 
 /* ---- Lịch chấm công tháng ---- */
+/* Lịch (cột trái, nhỏ gọn) + chi tiết/sửa công (cột phải) nằm cạnh nhau để không phải cuộn; điện thoại thì xếp dọc */
+.att-layout {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 760px) {
+  .att-layout {
+    grid-template-columns: 1fr;
+  }
+}
+.att-layout .card {
+  margin-top: 0 !important;
+}
+.stat-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.stat-row .card {
+  flex: 1 1 130px;
+  padding: 8px 12px;
+}
+.stat-row .stat-value {
+  font-size: 16px;
+}
 .cal {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  gap: 3px;
   text-align: center;
 }
 .cal .dow {
-  font-size: 10.5px;
+  font-size: 10px;
   color: var(--text-3);
-  padding-bottom: 4px;
+  padding-bottom: 2px;
 }
 .cal .day {
-  aspect-ratio: 1;
-  border-radius: 8px;
+  height: 32px;
+  border-radius: 7px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 12px;
   background: var(--surface);
   border: 1px solid var(--border);
-  color: var(--text);
+  color: var(--text-2);
 }
 .cal .day.ok {
   background: var(--success-bg);
   color: var(--success);
   border-color: transparent;
 }
-.cal .day.warn {
-  background: var(--amber-bg);
-  color: var(--amber);
-  border-color: transparent;
-}
-.cal .day.absent {
+.cal .day.issue {
   background: var(--danger-bg);
   color: var(--danger);
   border-color: transparent;
 }
 .cal .day.off {
-  background: var(--bg);
+  background: #e9e9e6;
   color: var(--text-3);
   border-color: transparent;
 }
@@ -819,13 +842,14 @@ tbody tr:hover td {
 }
 .cal .day.picked {
   box-shadow: 0 0 0 2px var(--amber) inset;
+  font-weight: 700;
 }
 .cal-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 12px;
-  margin: 10px 0 0;
-  font-size: 11.5px;
+  gap: 4px 12px;
+  margin: 8px 0 0;
+  font-size: 11px;
   color: var(--text-2);
 }
 .cal-legend i {
@@ -840,19 +864,16 @@ tbody tr:hover td {
 .cal-legend i.ok {
   background: var(--success-bg);
 }
-.cal-legend i.warn {
-  background: var(--amber-bg);
-}
-.cal-legend i.absent {
+.cal-legend i.issue {
   background: var(--danger-bg);
 }
 .cal-legend i.off {
-  background: var(--bg);
+  background: #e9e9e6;
 }
 .month-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
