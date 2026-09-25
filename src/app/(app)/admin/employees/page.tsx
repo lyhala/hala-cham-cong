@@ -7,7 +7,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { removeFromTeam } from "./actions";
 import { ActionButton } from "./_components/ActionButton";
 import { AutoSubmitForm } from "./_components/AutoSubmitForm";
-import { CreateTeamForm, TeamEditor } from "./_components/TeamForms";
+import { AddExistingToTeamForm, CreateTeamForm, TeamEditor } from "./_components/TeamForms";
 
 const TEAM_TYPE_BADGE = {
   PRODUCTION: <span className="badge neutral xs">Sản xuất</span>,
@@ -263,12 +263,15 @@ async function OrgChart() {
                   />
                 </div>
               ))}
-              <Link className="btn sm" style={{ marginTop: 6 }} href={`/admin/employees/new?team=${t.id}`}>
-                + Thêm vào team này
-              </Link>
+              <AddExistingToTeamForm
+                teamId={t.id}
+                teamName={t.name}
+                candidates={people.filter((p) => !t.members.some((m) => m.id === p.id))}
+              />
               <TeamEditor
                 team={{ id: t.id, name: t.name, type: t.type, memberCount: t.members.length, displayLeaderId: t.displayLeaderId }}
-                people={people}
+                teamMembers={t.members}
+                otherPeople={people.filter((p) => !t.members.some((m) => m.id === p.id))}
               />
             </div>
           </details>

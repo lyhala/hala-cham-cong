@@ -47,6 +47,23 @@ function isUniqueError(e: unknown, field: string) {
   );
 }
 
+/**
+ * Thông báo rõ khi trùng email: nếu email đó thuộc người ĐÃ NGHỈ (hồ sơ vẫn giữ để tính lương
+ * tháng cuối, spec §10), nói rõ để Admin biết vào hồ sơ đó xóa hẳn hoặc cho đi làm lại, thay vì
+ * chỉ báo "đã được dùng" khiến tưởng nhầm người đó vẫn đang làm.
+ */
+async function emailConflictError(email: string | null, excludeId?: string) {
+  if (!email) return `Email đã được dùng cho người khác`;
+  const existing = await prisma.employee.findFirst({
+    where: { email, ...(excludeId ? { NOT: { id: excludeId } } : {}) },
+  });
+  if (!existing) return `Email ${email} đã được dùng cho người khác`;
+  if (existing.status === "RESIGNED") {
+    return `Email ${email} đang thuộc hồ sơ ĐÃ NGHỈ của ${existing.name} (${existing.code}). Vào hồ sơ người đó để "Xóa hẳn" (nếu chắc chắn không cần dữ liệu cũ) hoặc "Đi làm lại" rồi mới dùng email này cho người khác.`;
+  }
+  return `Email ${email} đang được dùng cho ${existing.name} (${existing.code}, đang làm)`;
+}
+
 const optionalText = z
   .string()
   .trim()
@@ -137,7 +154,7 @@ export async function createEmployee(_: ActionState, fd: FormData): Promise<Acti
   } catch (e) {
     if (e instanceof LeaderConflictError) return { confirmLeader: e.conflict };
     if (isUniqueError(e, "code")) return { error: `Mã NV ${data.code} đã tồn tại` };
-    if (isUniqueError(e, "email")) return { error: `Email ${data.email} đã được dùng cho người khác` };
+    if (isUniqueError(e, "email")) return { error: await emailConflictError(data.email) };
     throw e;
   }
 }
@@ -188,7 +205,7 @@ export async function updateEmployee(_: ActionState, fd: FormData): Promise<Acti
   } catch (e) {
     if (e instanceof LeaderConflictError) return { confirmLeader: e.conflict };
     if (isUniqueError(e, "code")) return { error: `Mã NV ${data.code} đã tồn tại` };
-    if (isUniqueError(e, "email")) return { error: `Email ${data.email} đã được dùng cho người khác` };
+    if (isUniqueError(e, "email")) return { error: await emailConflictError(data.email, id) };
     throw e;
   }
 }
@@ -495,6 +512,37 @@ export async function removeFromTeam(_: ActionState, fd: FormData): Promise<Acti
   });
   refresh();
   return { ok: true };
+}
+
+/** Thêm 1 nhân sự ĐÃ CÓ trong công ty vào team (từ Sơ đồ tổ chức). Tạo người mới thì dùng /admin/employees/new. */
+export async function assignToTeam(_: ActionState, fd: FormData): Promise<ActionState> {
+  const admin = await requireRole("ADMIN");
+  const employeeId = String(fd.get("employeeId") ?? "");
+  const teamId = String(fd.get("teamId") ?? "");
+  if (!employeeId) return { error: "Vui lòng chọn nhân sự" };
+
+  const [e, team] = await Promise.all([
+    prisma.employee.findUnique({ where: { id: employeeId }, include: { team: true } }),
+    prisma.team.findUnique({ where: { id: teamId } }),
+  ]);
+  if (!e) return { error: "Không tìm thấy nhân sự" };
+  if (!team) return { error: "Không tìm thấy team" };
+  if (e.teamId === teamId) return { error: `${e.name} đã ở trong team này` };
+
+  await prisma.$transaction([
+    prisma.employee.update({ where: { id: employeeId }, data: { teamId } }),
+    // Không còn thuộc team cũ thì cũng không nên đứng tên Leader team cũ nữa
+    prisma.team.updateMany({ where: { leaderId: employeeId, NOT: { id: teamId } }, data: { leaderId: null } }),
+  ]);
+  await logAudit({
+    actorId: admin.id,
+    action: "employee.update",
+    targetType: "Employee",
+    targetId: employeeId,
+    summary: `Thêm ${e.code} - ${e.name} vào team "${team.name}"${e.team ? ` (chuyển từ "${e.team.name}")` : ""}`,
+  });
+  refresh();
+  return { ok: true, message: `Đã thêm ${e.name} vào team ${team.name}` };
 }
 
 // ───────────────────────── Ảnh nhân sự ─────────────────────────

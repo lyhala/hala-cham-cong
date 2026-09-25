@@ -1,7 +1,7 @@
 "use client";
 
 import { startTransition, useActionState, useState } from "react";
-import { createTeam, deleteTeam, updateTeam } from "../actions";
+import { assignToTeam, createTeam, deleteTeam, updateTeam } from "../actions";
 
 function TypeRadios({ defaultValue }: { defaultValue?: string }) {
   return (
@@ -60,15 +60,62 @@ export function CreateTeamForm() {
   );
 }
 
-// Đổi tên / đổi loại / xóa 1 team (hiện trong thẻ team ở sơ đồ tổ chức)
+// Thêm 1 nhân sự ĐÃ CÓ trong công ty vào team này (tạo mới thì dùng nút "+ Thêm nhân sự" ở tab Danh sách)
 type PersonOption = { id: string; name: string; code: string };
 
+export function AddExistingToTeamForm({ teamId, teamName, candidates }: { teamId: string; teamName: string; candidates: PersonOption[] }) {
+  const [open, setOpen] = useState(false);
+  const [state, dispatch, pending] = useActionState(async (prev: Awaited<ReturnType<typeof assignToTeam>>, fd: FormData) => {
+    const result = await assignToTeam(prev, fd);
+    if (result?.ok) setOpen(false);
+    return result;
+  }, undefined);
+
+  if (!open) {
+    return (
+      <button type="button" className="btn sm" style={{ marginTop: 6 }} disabled={candidates.length === 0} onClick={() => setOpen(true)}>
+        + Thêm người có sẵn
+      </button>
+    );
+  }
+  return (
+    <form
+      className="card"
+      style={{ marginTop: 8, background: "var(--bg)" }}
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        startTransition(() => dispatch(fd));
+      }}
+    >
+      <input type="hidden" name="teamId" value={teamId} />
+      <div className="field">
+        <label htmlFor={`assign-${teamId}`}>Chọn nhân sự đã có trong công ty</label>
+        <select id={`assign-${teamId}`} name="employeeId" required defaultValue="" autoFocus>
+          <option value="" disabled>— Chọn người —</option>
+          {candidates.map((p) => (
+            <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+          ))}
+        </select>
+      </div>
+      {state?.error && <div className="warn-box">{state.error}</div>}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button className="btn sm primary" type="submit" disabled={pending}>{pending ? "..." : `Thêm vào ${teamName}`}</button>
+        <button type="button" className="btn sm" onClick={() => setOpen(false)}>Hủy</button>
+      </div>
+    </form>
+  );
+}
+
+// Đổi tên / đổi loại / xóa 1 team (hiện trong thẻ team ở sơ đồ tổ chức)
 export function TeamEditor({
   team,
-  people,
+  teamMembers,
+  otherPeople,
 }: {
   team: { id: string; name: string; type: string; memberCount: number; displayLeaderId: string | null };
-  people: PersonOption[];
+  teamMembers: PersonOption[];
+  otherPeople: PersonOption[];
 }) {
   const [open, setOpen] = useState(false);
   const [state, dispatch, pending] = useActionState(async (prev: Awaited<ReturnType<typeof updateTeam>>, fd: FormData) => {
@@ -104,9 +151,20 @@ export function TeamEditor({
           <label htmlFor={`team-leader-${team.id}`}>Leader hiển thị</label>
           <select id={`team-leader-${team.id}`} name="displayLeaderId" defaultValue={team.displayLeaderId ?? ""}>
             <option value="">— Theo Leader phân quyền —</option>
-            {people.map((p) => (
-              <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
-            ))}
+            {teamMembers.length > 0 && (
+              <optgroup label="Thành viên team">
+                {teamMembers.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+                ))}
+              </optgroup>
+            )}
+            {otherPeople.length > 0 && (
+              <optgroup label="Nhân sự khác trong công ty">
+                {otherPeople.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} ({p.code})</option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <div style={{ fontSize: 11, color: "var(--text-2)", marginTop: 4 }}>
             Chỉ để hiển thị trên sơ đồ và hồ sơ nhân sự, không cấp quyền duyệt đơn. Chọn được bất kỳ ai (VD CEO).

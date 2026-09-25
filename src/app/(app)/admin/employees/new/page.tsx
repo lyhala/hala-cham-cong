@@ -4,18 +4,18 @@ import { prisma } from "@/lib/db";
 import { suggestNextEmployeeCode } from "@/lib/employees";
 import { EmployeeForm } from "../_components/EmployeeForm";
 
-export default async function NewEmployeePage(props: PageProps<"/admin/employees/new">) {
+// Tạo nhân sự mới. Vào team cụ thể luôn làm ở Sơ đồ tổ chức ("+ Thêm người có sẵn"),
+// không còn qua đây — trang này chỉ tạo người hoàn toàn mới.
+export default async function NewEmployeePage() {
   await requireRole("ADMIN");
-  const sp = await props.searchParams;
   const [teams, code] = await Promise.all([
     prisma.team.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, type: true } }),
     suggestNextEmployeeCode(),
   ]);
-  const teamId = typeof sp.team === "string" && teams.some((t) => t.id === sp.team) ? sp.team : "";
 
   return (
     <div style={{ maxWidth: 640 }}>
-      <Link href={teamId ? "/admin/employees?tab=org" : "/admin/employees"} className="backbar">← Nhân sự</Link>
+      <Link href="/admin/employees" className="backbar">← Nhân sự</Link>
       <h1>Thêm nhân sự</h1>
       <div className="subtitle">Team / Role có thể để trống và bổ sung sau (sẽ được đánh dấu đỏ &quot;Chưa chọn&quot;).</div>
       <EmployeeForm
@@ -28,7 +28,7 @@ export default async function NewEmployeePage(props: PageProps<"/admin/employees
           email: "",
           phone: "",
           address: "",
-          teamId,
+          teamId: "",
           role: "EMPLOYEE",
           joinedAt: "",
           isCEO: false,
