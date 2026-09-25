@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth/session";
 import { todayVN } from "@/lib/dates";
-import { countToApprove, lateWarning, listMyRequests, listProcessed, listToApprove } from "@/lib/requests-db";
+import { annualLeaveBalance, countToApprove, lateWarning, listMyRequests, listProcessed, listToApprove } from "@/lib/requests-db";
 import { getSetting } from "@/lib/settings-db";
 import { ActionButton } from "../admin/employees/_components/ActionButton";
 import { approveRequestAction, deleteRequestAction, withdrawRequestAction } from "./actions";
@@ -33,7 +33,7 @@ export default async function RequestsPage(props: PageProps<"/requests">) {
 }
 
 async function MyRequests({ userId, isAdmin }: { userId: string; isAdmin: boolean }) {
-  const [requests, perms] = await Promise.all([listMyRequests(userId), getSetting("rolePermissions")]);
+  const [requests, perms, leave] = await Promise.all([listMyRequests(userId), getSetting("rolePermissions"), annualLeaveBalance(userId, Number(todayVN().slice(0, 4)))]);
   // Admin bật/tắt nút chức năng theo role (§2)
   const types = (["OT", "LATE", "EARLY_LEAVE", "LEAVE", ...(isAdmin || perms.employee.wfh ? ["WFH"] : []), ...(isAdmin || perms.employee.advance ? ["SALARY_ADVANCE"] : [])]) as ("OT" | "LATE" | "EARLY_LEAVE" | "LEAVE" | "WFH" | "SALARY_ADVANCE")[];
 
@@ -41,6 +41,13 @@ async function MyRequests({ userId, isAdmin }: { userId: string; isAdmin: boolea
     <>
       <h1>Đơn của tôi</h1>
       <div className="subtitle">Tạo, theo dõi và thu hồi đơn</div>
+      <div className="info-box">
+        Phép năm {leave.year}: còn <b>{leave.remaining}</b> / {leave.entitlement} ngày
+        {leave.used > 0 && <> · đã nghỉ {leave.used}</>}
+        {leave.pending > 0 && <> · chờ duyệt {leave.pending}</>}
+        {leave.eligibleFrom > `${leave.year}-01` && leave.eligibleFrom <= `${leave.year}-12` && <> · được tính phép từ tháng {leave.eligibleFrom.slice(5)} (hết thời gian thử việc)</>}
+        {leave.entitlement === 0 && leave.eligibleFrom > `${leave.year}-12` && <> · đang thử việc, chưa có phép năm</>}
+      </div>
       <CreateRequestForm types={types} today={todayVN()} />
       {requests.length === 0 && <div className="card empty">Bạn chưa gửi đơn nào.</div>}
       {requests.map((r) => (

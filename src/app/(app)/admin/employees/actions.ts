@@ -120,6 +120,7 @@ function readEmployeeForm(fd: FormData) {
       attendanceExempt: fd.get("attendanceExempt") === "on",
       noProject: fd.get("noProject") === "on",
       parkingOutside: fd.get("parkingOutside") === "on",
+      skipProbation: fd.get("skipProbation") === "on",
     },
     confirmReplace: fd.get("confirmReplaceLeader") === "1",
   } as const;

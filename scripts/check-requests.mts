@@ -61,5 +61,29 @@ check("Đơn thứ 4 có ngày muộn nhất → cảnh báo", lateExemptionWarn
 check("Đơn thứ 4 nhưng ngày sớm nhất → không cảnh báo (được xếp vào 3 đơn đầu)", lateExemptionWarning("2026-09-01", ["2026-09-05", "2026-09-06", "2026-09-07"], 3), null);
 check("Mới 2 đơn → không cảnh báo", lateExemptionWarning("2026-09-20", ["2026-09-01", "2026-09-02"], 3), null);
 
+// ── Phép năm (§4): đủ 12 ngày nếu làm từ đầu năm; nhân sự mới qua thử việc 2 tháng mới tính phép ──
+import { annualLeaveEntitlement, annualLeaveShortage, leaveEligibleFrom } from "../src/lib/leave-policy";
+import { SETTING_DEFAULTS } from "../src/lib/settings";
+const policy = SETTING_DEFAULTS.leavePolicy;
+
+check("Vào làm 10/11/2025 → được tính phép từ 01/2026", leaveEligibleFrom("2025-11-10", false, policy), "2026-01");
+check("Vào làm 15/03/2026: tháng 3, 4 thử việc → từ tháng thứ 3 (05/2026) mới tính phép", leaveEligibleFrom("2026-03-15", false, policy), "2026-05");
+check("Vào làm 31/03/2026 cũng như vậy (tính theo tháng)", leaveEligibleFrom("2026-03-31", false, policy), "2026-05");
+check("Bỏ qua thử việc → tính từ tháng vào làm", leaveEligibleFrom("2026-03-15", true, policy), "2026-03");
+check("Chưa có ngày vào làm → coi như nhân sự lâu năm", annualLeaveEntitlement(2026, leaveEligibleFrom(null, false, policy), policy), 12);
+check("Làm từ đầu năm (đã qua thử việc) → đủ 12 phép", annualLeaveEntitlement(2026, "2026-01", policy), 12);
+check("Nhân sự cũ vào từ năm trước → đủ 12 phép", annualLeaveEntitlement(2026, leaveEligibleFrom("2024-05-01", false, policy), policy), 12);
+check("Vào 15/03/2026: chỉ tính phép 05→12 = 8 ngày", annualLeaveEntitlement(2026, "2026-05", policy), 8);
+check("Vào 15/03/2026 bỏ qua thử việc: 03→12 = 10 ngày", annualLeaveEntitlement(2026, "2026-03", policy), 10);
+check("Vào 20/11/2026: hết năm vẫn thử việc → 0 phép năm 2026", annualLeaveEntitlement(2026, leaveEligibleFrom("2026-11-20", false, policy), policy), 0);
+check("… nhưng năm 2027 đã có phép", annualLeaveEntitlement(2027, "2027-01", policy), 12);
+
+check("Còn đủ phép → cho nghỉ", annualLeaveShortage({ year: 2026, entitlement: 12, used: 10, needed: 2, eligibleFrom: "2026-01" }), null);
+check("Nghỉ 3 ngày khi còn 2 → báo thiếu phép", annualLeaveShortage({ year: 2026, entitlement: 12, used: 10, needed: 3, eligibleFrom: "2026-01" })?.includes("còn 2 ngày"), true);
+check("Đang thử việc → báo chưa có phép, gợi ý nghỉ không lương", annualLeaveShortage({ year: 2026, entitlement: 0, used: 0, needed: 1, eligibleFrom: "2027-01" })?.includes("thử việc"), true);
+check("Xin nghỉ phép ngày 20/04 khi thử việc đến hết 04 (được tính phép từ 05) → chặn", annualLeaveShortage({ year: 2026, entitlement: 8, used: 0, needed: 1, eligibleFrom: "2026-05", leaveFromMonth: "2026-04" })?.includes("thử việc"), true);
+check("Xin nghỉ phép ngày 05/05 (đã hết thử việc) → cho phép", annualLeaveShortage({ year: 2026, entitlement: 8, used: 0, needed: 1, eligibleFrom: "2026-05", leaveFromMonth: "2026-05" }), null);
+check("Cấu hình thử việc 3 tháng → từ tháng thứ 4", leaveEligibleFrom("2026-03-15", false, { ...policy, probationMonths: 3 }), "2026-06");
+check("Cấu hình 15 ngày/năm → đủ 15", annualLeaveEntitlement(2026, "2026-01", { ...policy, daysPerYear: 15 }), 15);
 console.log(failed ? `\n${failed} lỗi` : "\nTất cả đều đúng");
 process.exit(failed ? 1 : 0);

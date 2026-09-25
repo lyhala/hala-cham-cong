@@ -133,6 +133,7 @@ model Employee {
   attendanceExempt Boolean @default(false) // Miễn chấm công (§3.2)
   noProject        Boolean @default(false) // Không tham gia dự án → vào Chi phí cố định (§14.2)
   parkingOutside   Boolean @default(false) // Gửi xe ngoài → được 5.000đ/ngày (§6.1)
+  skipProbation    Boolean @default(false) // Trường hợp đặc biệt: bỏ qua thời gian thử việc khi tính phép năm (§4)
 
   // Hanet (§3.1)
   hanetPersonId String? @unique

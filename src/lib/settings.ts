@@ -30,7 +30,12 @@ export const SETTING_DEFAULTS = {
     mealAllowancePerMonth: 1_250_000,
     parkingPerDay: 5_000,
     otCoefficients: { weekday: 1.5, weekend: 2, holiday: 3 },
-    annualLeaveDaysPerYear: 12,
+  },
+
+  // §4 — Phép năm: 12 ngày/năm; nhân sự mới phải qua thử việc (số tháng) mới được tính phép — từ tháng thứ 3 nếu thử việc 2 tháng
+  leavePolicy: {
+    daysPerYear: 12,
+    probationMonths: 2,
   },
 
   // §5 — Duyệt 1 cấp (Leader HOẶC Admin) hay 2 cấp (Leader rồi Admin)

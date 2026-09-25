@@ -2,9 +2,10 @@ import "server-only";
 
 import type { Role } from "@/generated/prisma/enums";
 import { logAudit } from "@/lib/audit";
-import { recalcEmployeeMonth } from "@/lib/attendance";
+import { getWorkdayChecker, recalcEmployeeMonth } from "@/lib/attendance";
+import { annualLeaveEntitlement, annualLeaveShortage, leaveEligibleFrom } from "@/lib/leave-policy";
 import { prisma } from "@/lib/db";
-import { lateExemptionWarning, nextStatusOnApprove, TYPE_LABEL, validateRequest, type RequestInput } from "@/lib/requests";
+import { lateExemptionWarning, leaveUnitsInMonth, nextStatusOnApprove, TYPE_LABEL, validateRequest, type RequestInput } from "@/lib/requests";
 import { getSetting } from "@/lib/settings-db";
 
 export type Actor = { id: string; name: string; role: Role };
@@ -54,6 +55,34 @@ export async function approverRole(actor: Actor, req: { employeeId: string; empl
 
 const withOwner = { employee: { select: { id: true, name: true, code: true, team: { select: { name: true, leaderId: true } } } } } as const;
 
+/**
+ * Phép năm của nhân sự trong năm (spec §4): được hưởng, đã dùng (đơn đã duyệt), đang chờ duyệt, còn lại.
+ * Nhân sự mới phải qua thử việc mới có phép (trừ khi hồ sơ có cờ "Bỏ qua thử việc").
+ */
+export async function annualLeaveBalance(employeeId: string, year: number) {
+  const [employee, policy, requests, isWork] = await Promise.all([
+    prisma.employee.findUniqueOrThrow({ where: { id: employeeId }, select: { joinedAt: true, skipProbation: true } }),
+    getSetting("leavePolicy"),
+    prisma.request.findMany({
+      where: { employeeId, type: "LEAVE", leaveSubtype: "ANNUAL", deletedAt: null, status: { in: ["PENDING", "LEADER_APPROVED", "APPROVED"] }, dateFrom: { lte: new Date(Date.UTC(year, 11, 31)) }, dateTo: { gte: new Date(Date.UTC(year, 0, 1)) } },
+      select: { status: true, dateFrom: true, dateTo: true, dayPortion: true },
+    }),
+    getWorkdayChecker(`${year}-01-01`, `${year}-12-31`),
+  ]);
+  const eligibleFrom = leaveEligibleFrom(employee.joinedAt ? dayOf(employee.joinedAt) : null, employee.skipProbation, policy);
+  const entitlement = annualLeaveEntitlement(year, eligibleFrom, policy);
+  let used = 0;
+  let pending = 0;
+  for (const r of requests) {
+    if (!r.dateFrom || !r.dateTo) continue;
+    // leaveUnitsInMonth lọc theo tiền tố ngày nên truyền năm "2026" là đếm cả năm
+    const units = leaveUnitsInMonth({ dateFrom: dayOf(r.dateFrom), dateTo: dayOf(r.dateTo), dayPortion: r.dayPortion }, String(year), isWork);
+    if (r.status === "APPROVED") used += units;
+    else pending += units;
+  }
+  return { year, entitlement, used, pending, remaining: Math.round((entitlement - used - pending) * 100) / 100, eligibleFrom };
+}
+
 /** Nhân sự tạo đơn. Trả cảnh báo nếu đơn đi muộn này sẽ không được miễn phạt. */
 export async function createRequest(actor: Actor, input: RequestInput): Promise<Result> {
   const error = validateRequest(input);
@@ -64,6 +93,18 @@ export async function createRequest(actor: Actor, input: RequestInput): Promise<
   if (actor.role !== "ADMIN") {
     if (input.type === "WFH" && !perms.employee.wfh) return fail("Chức năng xin WFH đang tắt");
     if (input.type === "SALARY_ADVANCE" && !perms.employee.advance) return fail("Chức năng tạm ứng lương đang tắt");
+  }
+
+  // Nghỉ phép không được vượt phép năm (đã trừ đơn đang chờ duyệt); phần vượt phải xin "Nghỉ không lương"
+  if (input.type === "LEAVE" && input.leaveSubtype === "ANNUAL" && input.dateFrom && input.dateTo) {
+    const isWork = await getWorkdayChecker(input.dateFrom, input.dateTo);
+    for (const year of new Set([Number(input.dateFrom.slice(0, 4)), Number(input.dateTo.slice(0, 4))])) {
+      const needed = leaveUnitsInMonth({ dateFrom: input.dateFrom, dateTo: input.dateTo, dayPortion: input.dayPortion }, String(year), isWork);
+      if (needed <= 0) continue;
+      const bal = await annualLeaveBalance(actor.id, year);
+      const shortage = annualLeaveShortage({ year, entitlement: bal.entitlement, used: bal.used + bal.pending, needed, eligibleFrom: bal.eligibleFrom, leaveFromMonth: input.dateFrom!.slice(0, 7) });
+      if (shortage) return fail(shortage);
+    }
   }
 
   const oneDay = input.type === "OT" || input.type === "LATE" || input.type === "EARLY_LEAVE";

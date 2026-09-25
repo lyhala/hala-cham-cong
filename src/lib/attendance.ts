@@ -147,6 +147,16 @@ export async function loadMonthCalendar(month: string) {
   return { days, standardDays: days.filter((d) => d.workday).length };
 }
 
+/** Hàm kiểm tra "ngày này có phải ngày làm việc không" cho khoảng [fromDay, toDay] (T2–T6 + ngày ngoại lệ trong lịch). */
+export async function getWorkdayChecker(fromDay: string, toDay: string) {
+  const [schedule, overrides] = await Promise.all([
+    getSetting("workSchedule"),
+    prisma.workCalendarDay.findMany({ where: { date: { gte: new Date(`${fromDay}T00:00:00Z`), lte: new Date(`${toDay}T00:00:00Z`) } } }),
+  ]);
+  const byDay = new Map(overrides.map((o) => [dayOf(o.date), o]));
+  return (day: string) => isWorkday(day, schedule, byDay.get(day) ?? null);
+}
+
 // ok = ngày làm việc đủ 1 công · issue = chưa đủ công (nguyên nhân: đi muộn, về sớm, nghỉ...) · off = ngày nghỉ · future = chưa tới
 export type DayStatus = "ok" | "issue" | "off" | "future";
 

@@ -21,6 +21,7 @@ export type EmployeeFormValues = {
   attendanceExempt: boolean;
   noProject: boolean;
   parkingOutside: boolean;
+  skipProbation: boolean;
 };
 
 export type TeamOption = { id: string; name: string; type: "PRODUCTION" | "SUPPORT" };
