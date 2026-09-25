@@ -88,6 +88,14 @@ export async function addTab(spreadsheetId: string, title: string) {
   await api(`${spreadsheetId}:batchUpdate`, { method: "POST", body: JSON.stringify({ requests: [{ addSheet: { properties: { title, gridProperties: { frozenRowCount: 1 } } } }] }) });
 }
 
+/** Xóa 1 tab theo tên (dùng để dọn tab thử; luồng bình thường không xóa tab nào). */
+export async function deleteTab(spreadsheetId: string, title: string) {
+  const data = await api<{ sheets?: { properties: { sheetId: number; title: string } }[] }>(`${spreadsheetId}?fields=sheets.properties(sheetId,title)`);
+  const tab = data.sheets?.find((s) => s.properties.title === title);
+  if (!tab) return;
+  await api(`${spreadsheetId}:batchUpdate`, { method: "POST", body: JSON.stringify({ requests: [{ deleteSheet: { sheetId: tab.properties.sheetId } }] }) });
+}
+
 /** Đọc giá trị (số giữ nguyên dạng số, không theo định dạng hiển thị). */
 export async function readValues(spreadsheetId: string, tab: string, cells: string) {
   const data = await api<{ values?: unknown[][] }>(`${spreadsheetId}/values/${range(tab, cells)}?valueRenderOption=UNFORMATTED_VALUE`);
