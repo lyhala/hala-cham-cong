@@ -16,14 +16,24 @@ const form = (data: Record<string, string | string[]>): Form => ({
 });
 const has = (r: { error?: string }, text: string) => r.error?.includes(text) ?? false;
 
-// Giờ làm việc
-const ws = { morningStart: "08:30", morningEnd: "12:00", afternoonStart: "13:30", afternoonEnd: "17:30", workWeekdays: ["1", "2", "3", "4", "5"] };
-check("Giờ làm việc hợp lệ", parseWorkSchedule(form(ws)).value, { morningStart: "08:30", morningEnd: "12:00", afternoonStart: "13:30", afternoonEnd: "17:30", workWeekdays: [1, 2, 3, 4, 5] });
+// Giờ làm việc: mặc định + giờ riêng từng thứ
+const weekdays = (days: number[], extra: Record<string, string> = {}) => ({ ...Object.fromEntries(days.map((d) => [`work_${d}`, "on"])), ...extra });
+const ws = { morningStart: "08:30", morningEnd: "12:00", afternoonStart: "13:30", afternoonEnd: "17:30", ...weekdays([1, 2, 3, 4, 5]) };
+check("Giờ làm việc hợp lệ, không có giờ riêng", parseWorkSchedule(form(ws)).value, { morningStart: "08:30", morningEnd: "12:00", afternoonStart: "13:30", afternoonEnd: "17:30", workWeekdays: [1, 2, 3, 4, 5], daySchedules: {} });
 check("Mốc giờ không tăng dần bị chặn", has(parseWorkSchedule(form({ ...ws, morningEnd: "08:00" })), "tăng dần"), true);
 check("Giờ sai định dạng bị chặn", has(parseWorkSchedule(form({ ...ws, afternoonEnd: "25:00" })), "HH:mm"), true);
-check("Không chọn ngày làm nào bị chặn", has(parseWorkSchedule(form({ ...ws, workWeekdays: [] })), "ít nhất 1 ngày"), true);
-check("Làm cả T7 (6) được", parseWorkSchedule(form({ ...ws, workWeekdays: ["1", "2", "3", "4", "5", "6"] })).value?.workWeekdays, [1, 2, 3, 4, 5, 6]);
-
+check("Không chọn ngày làm nào bị chặn", has(parseWorkSchedule(form({ morningStart: "08:30", morningEnd: "12:00", afternoonStart: "13:30", afternoonEnd: "17:30" })), "ít nhất 1 ngày"), true);
+check("Làm cả T7 (giờ trống = dùng giờ mặc định, không lưu giờ riêng)", parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]) })).value?.workWeekdays, [1, 2, 3, 4, 5, 6]);
+check("Form điền sẵn giờ mặc định cho T7 → vẫn không lưu giờ riêng", Object.keys(parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]), ms_6: "08:30", me_6: "12:00", as_6: "13:30", ae_6: "17:30" })).value?.daySchedules ?? {}), []);
+check("Thứ 7 chỉ làm sáng (bỏ trống 2 ô buổi chiều) → lưu giờ riêng", parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]), ms_6: "08:30", me_6: "12:00", as_6: "", ae_6: "" })).value?.daySchedules, { "6": { morningStart: "08:30", morningEnd: "12:00", afternoonStart: null, afternoonEnd: null, unit: null } });
+check("Chủ nhật chỉ làm chiều, số công đặt tay 0,5", parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 0]), ms_0: "", me_0: "", as_0: "13:30", ae_0: "17:30", unit_0: "0,5" })).value?.daySchedules["0"], { morningStart: null, morningEnd: null, afternoonStart: "13:30", afternoonEnd: "17:30", unit: 0.5 });
+check("Thứ 7 giờ khác mặc định (8h00–11h30)", parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]), ms_6: "08:00", me_6: "11:30", as_6: "", ae_6: "" })).value?.daySchedules["6"]?.morningStart, "08:00");
+check("Chỉ đặt số công riêng (giờ để trống) → dùng giờ mặc định nhưng lưu số công", parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]), unit_6: "0.5" })).value?.daySchedules["6"]?.unit, 0.5);
+check("Buổi sáng chỉ nhập 1 ô bị chặn", has(parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]), ms_6: "08:30", me_6: "", as_6: "", ae_6: "" })), "đủ giờ vào và giờ ra"), true);
+check("Giờ ra trước giờ vào bị chặn", has(parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]), ms_6: "12:00", me_6: "08:30", as_6: "", ae_6: "" })), "sau giờ vào"), true);
+check("Buổi chiều bắt đầu trước khi hết buổi sáng bị chặn", has(parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]), ms_6: "08:30", me_6: "12:00", as_6: "11:00", ae_6: "15:00" })), "sau khi hết buổi sáng"), true);
+check("Số công 1,5 bị chặn", has(parseWorkSchedule(form({ ...ws, ...weekdays([1, 2, 3, 4, 5, 6]), unit_6: "1.5" })), "tối đa 1"), true);
+check("Thứ không tick thì bỏ qua giờ riêng", Object.keys(parseWorkSchedule(form({ ...ws, ms_6: "08:30", me_6: "12:00", as_6: "", ae_6: "" })).value?.daySchedules ?? {}), []);
 // Bảng phạt
 const lp = { tierFrom0: "08:31", tierTo0: "08:45", tierRate0: "1.000", tierFrom1: "08:46", tierTo1: "09:00", tierRate1: "2000", halfDayAfter: "10:00", freeExemptionsPerMonth: "3" };
 check("Bảng phạt hợp lệ (dòng trống bỏ qua)", parseLatePenalty(form(lp), "08:30").value, {

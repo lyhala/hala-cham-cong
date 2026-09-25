@@ -51,6 +51,8 @@ function Slip({ month, data: d, visible }: { month: string; data: PayrollResult;
     ["Lương performance", `${fmtMoney(d.perfSalary)}đ`, visible.perfSalary],
     ["Hệ số performance", String(d.perfCoefficient), visible.perfCoefficient],
     ["Công thực", `${d.actualWorkUnits} / ${d.standardWorkDays} ngày`, visible.workUnits],
+    ["Nghỉ phép", `${d.annualLeaveUsed ?? 0} ngày`, visible.annualLeave],
+    ["Nghỉ không lương", `${d.unpaidLeaveDays ?? 0} ngày`, visible.unpaidLeave],
     ["OT", d.otHours ? `${d.otHours} giờ (${d.otUnits} công)` : "—", visible.ot],
   ];
   const money: [string, number, string, boolean][] = [   // [tên, số tiền, dấu, có hiện không]

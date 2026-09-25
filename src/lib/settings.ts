@@ -3,6 +3,15 @@
 
 import type { RequestType } from "@/generated/prisma/enums";
 
+/** Giờ làm việc riêng của 1 thứ trong tuần. Mỗi buổi phải đủ cả giờ bắt đầu và kết thúc, hoặc để trống cả hai (không làm buổi đó). */
+export type DayHours = {
+  morningStart: string | null;
+  morningEnd: string | null;
+  afternoonStart: string | null;
+  afternoonEnd: string | null;
+  unit: number | null;
+};
+
 export const SETTING_DEFAULTS = {
   // §3.2 — Ca chuẩn. Giờ công chuẩn/ngày (7,5), giờ nghỉ trưa (1,5) và mọi công thức chấm công đều suy ra từ 4 mốc giờ này
   workSchedule: {
@@ -11,6 +20,9 @@ export const SETTING_DEFAULTS = {
     afternoonStart: "13:30",
     afternoonEnd: "17:30",
     workWeekdays: [1, 2, 3, 4, 5], // T2–T6 (0 = Chủ nhật)
+    // Giờ làm RIÊNG theo thứ (khóa "0"–"6", 0 = Chủ nhật) — VD thứ 7 chỉ làm sáng. Thứ nào không có mục ở đây dùng giờ mặc định ở trên.
+    // Buổi để null = không làm buổi đó. unit = số công khi đi làm đủ giờ của ngày (null = tự tính theo tỷ lệ giờ, làm tròn 0,5).
+    daySchedules: {} as Record<string, DayHours>,
   },
 
   // §3.3 — Phạt đi muộn lũy tiến. perMinute: đ/phút cho phút nằm trong khung [from, to].
@@ -67,6 +79,8 @@ export const SETTING_DEFAULTS = {
     latePenalty: true,
     advanceDeduction: true,
     leavePayout: true,
+    annualLeave: true,
+    unpaidLeave: true,
   },
 
   // §11 — Giao diện

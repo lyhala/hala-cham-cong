@@ -2,7 +2,7 @@ import "server-only";
 
 import { prisma } from "@/lib/db";
 import { todayVN } from "@/lib/dates";
-import { calcDay, isWorkday, pickExemptDays } from "@/lib/attendance-rules";
+import { calcDay, isWorkday, pickExemptDays, scheduleForDay } from "@/lib/attendance-rules";
 import { daysInRange, LEAVE_LABEL } from "@/lib/requests";
 import { getSetting } from "@/lib/settings-db";
 import { sortByEmployeeCode } from "@/lib/employee-order";
@@ -59,6 +59,7 @@ export async function calcForDay(employeeId: string, day: string, checkIn: Date 
   ]);
   return calcDay(
     {
+      day,
       checkIn,
       checkOut,
       workday: isWorkday(day, schedule, override),
@@ -143,19 +144,22 @@ export async function loadMonthCalendar(month: string) {
   const days = Array.from({ length: lastDay }, (_, i) => {
     const day = `${month}-${String(i + 1).padStart(2, "0")}`;
     const override = byDay.get(day) ?? null;
-    return { day, workday: isWorkday(day, schedule, override), isHoliday: override?.isHoliday ?? false, note: override?.note ?? null };
+    const workday = isWorkday(day, schedule, override);
+    // Số công của ngày đi làm đủ giờ: ngày thường 1, ngày làm nửa buổi (VD thứ 7 chỉ làm sáng) thường 0,5 — theo giờ làm riêng của thứ đó
+    return { day, workday, unit: workday ? scheduleForDay(schedule, day).unit : 0, isHoliday: override?.isHoliday ?? false, note: override?.note ?? null };
   });
-  return { days, standardDays: days.filter((d) => d.workday).length };
+  // Ngày công tháng = tổng số công của các ngày làm việc (VD 22 ngày thường + 4 sáng thứ 7 × 0,5 = 24)
+  return { days, standardDays: Math.round(days.reduce((s, d) => s + d.unit, 0) * 100) / 100 };
 }
 
-/** Hàm kiểm tra "ngày này có phải ngày làm việc không" cho khoảng [fromDay, toDay] (T2–T6 + ngày ngoại lệ trong lịch). */
-export async function getWorkdayChecker(fromDay: string, toDay: string) {
+/** Hàm trả về SỐ CÔNG của 1 ngày trong khoảng [fromDay, toDay]: 0 = ngày nghỉ, 1 = ngày làm đủ, 0,5 = ngày làm nửa buổi... (theo lịch + giờ làm riêng từng thứ). */
+export async function getDayUnitChecker(fromDay: string, toDay: string) {
   const [schedule, overrides] = await Promise.all([
     getSetting("workSchedule"),
     prisma.workCalendarDay.findMany({ where: { date: { gte: new Date(`${fromDay}T00:00:00Z`), lte: new Date(`${toDay}T00:00:00Z`) } } }),
   ]);
   const byDay = new Map(overrides.map((o) => [dayOf(o.date), o]));
-  return (day: string) => isWorkday(day, schedule, byDay.get(day) ?? null);
+  return (day: string) => (isWorkday(day, schedule, byDay.get(day) ?? null) ? scheduleForDay(schedule, day).unit : 0);
 }
 
 // ok = ngày làm việc đủ 1 công · issue = chưa đủ công (nguyên nhân: đi muộn, về sớm, nghỉ...) · off = ngày nghỉ · future = chưa tới
@@ -164,6 +168,7 @@ export type DayStatus = "ok" | "issue" | "off" | "future";
 export type DayView = {
   day: string; // "YYYY-MM-DD"
   workday: boolean;
+  dayUnit: number; // Số công khi đi làm đủ giờ của ngày này (0 = ngày nghỉ)
   isHoliday: boolean;
   calendarNote: string | null;
   checkIn: Date | null;
@@ -194,6 +199,7 @@ export async function getMonthAttendance(employeeId: string, month: string) {
       select: { type: true, leaveSubtype: true, dateFrom: true, dateTo: true, dayPortion: true },
     }),
   ]);
+  const unitOf = new Map(calendar.days.map((d) => [d.day, d.unit]));
   const leaveByDay = new Map<string, { paidUnits: number; label: string }>();
   for (const l of leaves) {
     if (!l.dateFrom || !l.dateTo) continue;
@@ -203,7 +209,9 @@ export async function getMonthAttendance(employeeId: string, month: string) {
     for (const d of daysInRange(dayOf(l.dateFrom), dayOf(l.dateTo))) {
       if (!d.startsWith(month)) continue;
       const cur = leaveByDay.get(d);
-      leaveByDay.set(d, { paidUnits: Math.min(1, (cur?.paidUnits ?? 0) + (paid ? perDay : 0)), label: cur ? `${cur.label}, ${label}` : label });
+      // Công từ đơn nghỉ = (cả ngày 1 / nửa ngày 0,5) × số công của ngày đó (thứ 7 làm nửa buổi thì cả ngày nghỉ = 0,5), tối đa đủ công của ngày
+      const unit = unitOf.get(d) ?? 0;
+      leaveByDay.set(d, { paidUnits: Math.min(unit, (cur?.paidUnits ?? 0) + (paid ? perDay * unit : 0)), label: cur ? `${cur.label}, ${label}` : label });
     }
   }
   const exempt = employee?.attendanceExempt ?? false;
@@ -214,18 +222,19 @@ export async function getMonthAttendance(employeeId: string, month: string) {
     const r = byDay.get(c.day);
     const lateExcused = excused.has(c.day);
     // Miễn chấm công: mọi ngày làm việc (đã tới) tự đủ 1 công, bỏ qua dữ liệu Hanet
-    const workUnits = c.workday && exempt && c.day <= today ? 1 : (r?.workUnits ?? 0);
+    const workUnits = c.workday && exempt && c.day <= today ? c.unit : (r?.workUnits ?? 0);
     const leave = c.workday ? leaveByDay.get(c.day) : undefined;
     const paidUnits = leave?.paidUnits ?? 0;
     let status: DayStatus;
     if (!c.workday) status = "off";
     else if (c.day > today) status = "future";
     else if (exempt) status = "ok";
-    else if (workUnits + paidUnits >= 1) status = "ok"; // Chỉ xét số công: đủ 1 công (gồm nghỉ phép/WFH đã duyệt, hoặc Admin sửa tay) là xanh
+    else if (workUnits + paidUnits >= c.unit - 0.001) status = "ok"; // Chỉ xét số công: đủ công của ngày (gồm nghỉ phép/WFH đã duyệt, hoặc Admin sửa tay) là xanh
     else status = "issue";
     return {
       day: c.day,
       workday: c.workday,
+      dayUnit: c.unit,
       isHoliday: c.isHoliday,
       calendarNote: c.note,
       checkIn: r?.checkIn ?? null,
@@ -249,7 +258,7 @@ export async function getMonthAttendance(employeeId: string, month: string) {
 function summarizeDays(days: DayView[], standardDays: number) {
   return {
     standardDays,
-    workUnits: Math.round(days.reduce((s, d) => s + Math.min(1, d.workUnits + d.paidUnits), 0) * 100) / 100,
+    workUnits: Math.round(days.reduce((s, d) => s + Math.min(d.dayUnit || 1, d.workUnits + d.paidUnits), 0) * 100) / 100,
     lateDays: days.filter((d) => d.lateMinutes > 0).length,
     lateMinutes: days.reduce((s, d) => s + d.lateMinutes, 0),
     // Tiền phạt sau khi trừ các ngày được miễn (§3.3)
@@ -294,7 +303,7 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
     if (r.dateFrom) requestDays.set(r.employeeId, [...(requestDays.get(r.employeeId) ?? []), r.dateFrom.toISOString().slice(0, 10)]);
   }
   const today = todayVN();
-  const elapsedWorkdays = calendar.days.filter((d) => d.workday && d.day <= today).length;
+  const elapsedWorkdays = Math.round(calendar.days.filter((d) => d.workday && d.day <= today).reduce((s, d) => s + d.unit, 0) * 100) / 100; // tổng công của các ngày làm đã qua
 
   return {
     standardDays: calendar.standardDays,

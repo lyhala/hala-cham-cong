@@ -2,7 +2,7 @@ import "server-only";
 
 import type { Role } from "@/generated/prisma/enums";
 import { logAudit } from "@/lib/audit";
-import { getWorkdayChecker, recalcEmployeeMonth } from "@/lib/attendance";
+import { getDayUnitChecker, recalcEmployeeMonth } from "@/lib/attendance";
 import { accrualUptoMonth, annualLeaveAccrued, annualLeaveShortage, leaveDaysToPayOut, leaveEligibleFrom } from "@/lib/leave-policy";
 import { todayVN } from "@/lib/dates";
 import { prisma } from "@/lib/db";
@@ -80,7 +80,7 @@ export async function annualLeaveBalances(employeeIds: string[], year: number, u
       where: { employeeId: { in: employeeIds }, type: "LEAVE", leaveSubtype: "ANNUAL", deletedAt: null, status: { in: ["PENDING", "LEADER_APPROVED", "APPROVED"] }, dateFrom: { lte: new Date(Date.UTC(year, 11, 31)) }, dateTo: { gte: new Date(Date.UTC(year, 0, 1)) } },
       select: { employeeId: true, status: true, dateFrom: true, dateTo: true, dayPortion: true },
     }),
-    getWorkdayChecker(`${year}-01-01`, `${year}-12-31`),
+    getDayUnitChecker(`${year}-01-01`, `${year}-12-31`),
   ]);
   const upto = uptoMonth ?? accrualUptoMonth(year, todayVN().slice(0, 7));
   const used = new Map<string, { approved: number; pending: number }>();
@@ -129,7 +129,7 @@ export async function createRequest(actor: Actor, input: RequestInput): Promise<
 
   // Nghỉ phép chỉ được dùng phần đã tích lũy đến hết tháng của ngày nghỉ (không nghỉ ứng trước); phần vượt xin "Nghỉ không lương"
   if (input.type === "LEAVE" && input.leaveSubtype === "ANNUAL" && input.dateFrom && input.dateTo) {
-    const isWork = await getWorkdayChecker(input.dateFrom, input.dateTo);
+    const isWork = await getDayUnitChecker(input.dateFrom, input.dateTo);
     for (const year of new Set([Number(input.dateFrom.slice(0, 4)), Number(input.dateTo.slice(0, 4))])) {
       const needed = leaveUnitsInMonth({ dateFrom: input.dateFrom, dateTo: input.dateTo, dayPortion: input.dayPortion }, String(year), isWork);
       if (needed <= 0) continue;

@@ -137,6 +137,7 @@ async function requestAdjustments(month: string, employeeIds: string[], calendar
   const hoursPerDay = standardHoursPerDay(await getSetting("workSchedule")); // công OT = giờ OT ÷ giờ công chuẩn theo cấu hình ca
   const dayInfo = new Map(calendar.days.map((d) => [d.day, d]));
   const workday = (day: string) => dayInfo.get(day)?.workday ?? false;
+  const unitOf = (day: string) => dayInfo.get(day)?.unit ?? 0; // số công của ngày (thứ 7 làm nửa buổi = 0,5)
   const result = new Map<string, typeof NO_ADJUSTMENTS>();
   const ot = new Map<string, { weekday: number; weekend: number; holiday: number }>();
   const get = (id: string) => result.get(id) ?? result.set(id, { ...NO_ADJUSTMENTS }).get(id)!;
@@ -152,7 +153,7 @@ async function requestAdjustments(month: string, employeeIds: string[], calendar
       hours[otDayKind({ isHoliday: dayInfo.get(from)?.isHoliday ?? false, workday: workday(from) })] += hoursBetween(r.timeFrom, r.timeTo);
       ot.set(r.employeeId, hours);
     } else if ((r.type === "LEAVE" || r.type === "WFH") && from && to) {
-      const units = leaveUnitsInMonth({ dateFrom: from, dateTo: to, dayPortion: r.dayPortion }, month, workday);
+      const units = leaveUnitsInMonth({ dateFrom: from, dateTo: to, dayPortion: r.dayPortion }, month, unitOf);
       if (r.type === "WFH" || r.leaveSubtype === "MARRIAGE" || r.leaveSubtype === "FUNERAL") adj.otherPaidLeaveDays += units;
       else if (r.leaveSubtype === "UNPAID") adj.unpaidLeaveDays += units;
       else adj.annualLeaveDays += units;

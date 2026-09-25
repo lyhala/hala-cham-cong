@@ -4,7 +4,7 @@
 import type { RequestType } from "@/generated/prisma/enums";
 import { parseMoney } from "@/lib/format";
 import { spreadsheetIdFromUrl } from "@/lib/payroll-sheet";
-import type { SETTING_DEFAULTS } from "@/lib/settings";
+import type { DayHours, SETTING_DEFAULTS } from "@/lib/settings";
 
 export type Form = { get(name: string): unknown; getAll(name: string): unknown[] };
 export type Parsed<T> = { value: T; error?: undefined } | { error: string; value?: undefined };
@@ -26,18 +26,48 @@ type Defaults = typeof SETTING_DEFAULTS;
 const WEEKDAY_LABEL = ["Chủ nhật", "Thứ 2", "Thứ 3", "Thứ 4", "Thứ 5", "Thứ 6", "Thứ 7"];
 export { WEEKDAY_LABEL };
 
-/** Giờ làm việc: 4 mốc giờ + các ngày làm trong tuần. Giờ công chuẩn/ngày và giờ nghỉ trưa tự suy ra từ đây. */
+/**
+ * Giờ làm việc: giờ MẶC ĐỊNH (4 mốc, dùng cho ngày thường) + từng thứ trong tuần có làm việc, mỗi thứ có thể có giờ riêng
+ * (VD thứ 7 chỉ làm sáng). Mỗi buổi nhập đủ giờ vào / giờ ra, hoặc để trống cả hai = không làm buổi đó. Ô "số công" để trống
+ * = tự tính theo tỷ lệ giờ. Thứ nào giống hệt giờ mặc định thì không lưu giờ riêng. Giờ công chuẩn/ngày tự suy ra từ đây.
+ */
 export function parseWorkSchedule(f: Form): Parsed<Defaults["workSchedule"]> {
   const t = { morningStart: str(f, "morningStart"), morningEnd: str(f, "morningEnd"), afternoonStart: str(f, "afternoonStart"), afternoonEnd: str(f, "afternoonEnd") };
-  if (!Object.values(t).every(isTime)) return fail("Vui lòng nhập đủ 4 mốc giờ (dạng HH:mm)");
+  if (!Object.values(t).every(isTime)) return fail("Vui lòng nhập đủ 4 mốc giờ mặc định (dạng HH:mm)");
   if (!(t.morningStart < t.morningEnd && t.morningEnd < t.afternoonStart && t.afternoonStart < t.afternoonEnd)) {
-    return fail("Các mốc giờ phải tăng dần: vào ca sáng < hết ca sáng < vào ca chiều < hết ca chiều");
+    return fail("Các mốc giờ mặc định phải tăng dần: vào ca sáng < hết ca sáng < vào ca chiều < hết ca chiều");
   }
-  const workWeekdays = f.getAll("workWeekdays").map(Number).filter((n) => Number.isInteger(n) && n >= 0 && n <= 6);
-  if (workWeekdays.length === 0) return fail("Chọn ít nhất 1 ngày làm việc trong tuần");
-  return { value: { ...t, workWeekdays: [...new Set(workWeekdays)].sort((a, b) => a - b) } };
-}
 
+  const workWeekdays: number[] = [];
+  const daySchedules: Record<string, DayHours> = {};
+  for (const d of [1, 2, 3, 4, 5, 6, 0]) {
+    if (str(f, `work_${d}`) !== "on") continue;
+    workWeekdays.push(d);
+    const label = WEEKDAY_LABEL[d];
+
+    const unitRaw = str(f, `unit_${d}`).replace(",", ".");
+    const unit = unitRaw === "" ? null : Number(unitRaw);
+    if (unit !== null && !(Number.isFinite(unit) && unit > 0 && unit <= 1)) return fail(`${label}: số công của ngày phải lớn hơn 0 và tối đa 1`);
+
+    const times = [str(f, `ms_${d}`), str(f, `me_${d}`), str(f, `as_${d}`), str(f, `ae_${d}`)];
+    // Bỏ trống hết giờ = dùng giờ mặc định
+    const [ms, me, as, ae] = times.every((v) => v === "") ? [t.morningStart, t.morningEnd, t.afternoonStart, t.afternoonEnd] : times;
+
+    const filled = (a: string, b: string) => [a, b].filter(Boolean).length;
+    if (filled(ms, me) === 1) return fail(`${label}: buổi sáng phải nhập đủ giờ vào và giờ ra (hoặc để trống cả hai nếu không làm buổi sáng)`);
+    if (filled(as, ae) === 1) return fail(`${label}: buổi chiều phải nhập đủ giờ vào và giờ ra (hoặc để trống cả hai nếu không làm buổi chiều)`);
+    if (![ms, me, as, ae].filter(Boolean).every(isTime)) return fail(`${label}: giờ phải có dạng HH:mm`);
+    if (!ms && !as) return fail(`${label}: cần ít nhất 1 buổi làm việc`);
+    if (ms && me <= ms) return fail(`${label}: giờ ra buổi sáng phải sau giờ vào`);
+    if (as && ae <= as) return fail(`${label}: giờ ra buổi chiều phải sau giờ vào`);
+    if (ms && as && as <= me) return fail(`${label}: buổi chiều phải bắt đầu sau khi hết buổi sáng`);
+
+    const sameAsDefault = ms === t.morningStart && me === t.morningEnd && as === t.afternoonStart && ae === t.afternoonEnd && unit === null;
+    if (!sameAsDefault) daySchedules[String(d)] = { morningStart: ms || null, morningEnd: me || null, afternoonStart: as || null, afternoonEnd: ae || null, unit };
+  }
+  if (workWeekdays.length === 0) return fail("Chọn ít nhất 1 ngày làm việc trong tuần");
+  return { value: { ...t, workWeekdays: workWeekdays.sort((a, b) => a - b), daySchedules } };
+}
 const MAX_TIERS = 8;
 
 /** Bảng phạt đi muộn lũy tiến: các khung (từ – đến, đ/phút), mốc đến sau giờ này thì trừ ½ công, số lần miễn phạt/tháng. */
@@ -123,6 +153,8 @@ export const PAYSLIP_LINE_LABEL: Record<keyof Defaults["payslipVisibleLines"], s
   latePenalty: "Phạt đi muộn",
   advanceDeduction: "Tạm ứng lương",
   leavePayout: "Quy đổi phép tồn",
+  annualLeave: "Nghỉ phép (số ngày)",
+  unpaidLeave: "Nghỉ không lương (số ngày)",
 };
 
 /** Dòng nào hiện trên phiếu lương nhân sự thấy (Thực nhận luôn hiện). BHXH/Thuế/Tổng chi phí không bao giờ hiện. */

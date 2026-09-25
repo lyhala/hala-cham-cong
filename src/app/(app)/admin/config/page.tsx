@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { scheduleTimes } from "@/lib/attendance-rules";
+import { scheduleForDay, scheduleTimes } from "@/lib/attendance-rules";
 import { requireRole } from "@/lib/auth/session";
 import { PAYSLIP_LINE_LABEL, REQUEST_TYPES, RETENTION_LABEL, SHEET_LABEL, WEEKDAY_LABEL } from "@/lib/config-validate";
 import { currentMonthVN, shiftMonth, todayVN } from "@/lib/dates";
@@ -64,7 +64,7 @@ async function WorkTab({ year }: { year: number }) {
   return (
     <>
       <Section
-        title="Giờ làm việc chuẩn"
+        title="Giờ làm việc chuẩn (giờ mặc định của ngày thường)"
         hint={<>Công = giờ làm thực tế ÷ giờ của 1 ngày công chuẩn; giờ nghỉ trưa chỉ trừ khi thực sự nằm trong khoảng nghỉ. Hiện tại: <b>{hours(t.dayMin)} giờ/ngày</b> ({hours(t.morningMin)}h sáng + {hours(t.afternoonMin)}h chiều), nghỉ trưa <b>{hours(t.as - t.me)} giờ</b>. Đổi khung giờ thì các con số này tự đổi theo.</>}
       >
         <ConfigForm action={saveWorkSchedule}>
@@ -74,11 +74,38 @@ async function WorkTab({ year }: { year: number }) {
             <Field label="Vào ca chiều" name="afternoonStart" type="time" defaultValue={schedule.afternoonStart} />
             <Field label="Hết ca chiều" name="afternoonEnd" type="time" defaultValue={schedule.afternoonEnd} />
           </div>
-          <div className="stat-label">Các ngày làm việc trong tuần</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "0 16px", marginBottom: 12 }}>
-            {[1, 2, 3, 4, 5, 6, 0].map((d) => (
-              <Check key={d} name="workWeekdays" value={String(d)} label={WEEKDAY_LABEL[d]} defaultChecked={schedule.workWeekdays.includes(d)} />
-            ))}
+          <div className="stat-label" style={{ marginTop: 6 }}>Ngày làm việc trong tuần & giờ làm riêng từng thứ</div>
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginBottom: 8, lineHeight: 1.6 }}>
+            Tick thứ có làm việc. Mỗi thứ có thể có giờ riêng — VD <b>thứ 7 chỉ làm sáng</b>: để trống 2 ô buổi chiều. Để trống hết = dùng giờ mặc định ở trên.
+            “Số công” là công tính khi đi làm đủ giờ của ngày đó; để trống thì tự tính theo tỷ lệ giờ so với ngày thường (làm sáng 3,5h/7,5h ≈ 0,5 công).
+          </div>
+          <div className="table-wrap" style={{ marginBottom: 12 }}>
+            <table>
+              <thead>
+                <tr><th>Thứ</th><th>Làm việc</th><th>Sáng từ</th><th>Sáng đến</th><th>Chiều từ</th><th>Chiều đến</th><th>Số công</th><th>Hiện tại</th></tr>
+              </thead>
+              <tbody>
+                {[1, 2, 3, 4, 5, 6, 0].map((wd) => {
+                  const custom = schedule.daySchedules?.[String(wd)];
+                  const sample = scheduleForDay(schedule, `2026-09-${20 + wd}`); // 20/09/2026 là Chủ nhật → 20 + thứ = đúng thứ đó
+                  const on = schedule.workWeekdays.includes(wd);
+                  return (
+                    <tr key={wd}>
+                      <td style={{ whiteSpace: "nowrap" }}>{WEEKDAY_LABEL[wd]}</td>
+                      <td><input type="checkbox" name={`work_${wd}`} defaultChecked={on} aria-label={`${WEEKDAY_LABEL[wd]} làm việc`} /></td>
+                      <td><input type="time" name={`ms_${wd}`} defaultValue={custom ? (custom.morningStart ?? "") : schedule.morningStart} /></td>
+                      <td><input type="time" name={`me_${wd}`} defaultValue={custom ? (custom.morningEnd ?? "") : schedule.morningEnd} /></td>
+                      <td><input type="time" name={`as_${wd}`} defaultValue={custom ? (custom.afternoonStart ?? "") : schedule.afternoonStart} /></td>
+                      <td><input type="time" name={`ae_${wd}`} defaultValue={custom ? (custom.afternoonEnd ?? "") : schedule.afternoonEnd} /></td>
+                      <td><input name={`unit_${wd}`} inputMode="decimal" defaultValue={custom?.unit ?? ""} placeholder="tự tính" style={{ width: 70 }} /></td>
+                      <td style={{ fontSize: 11.5, color: "var(--text-2)", whiteSpace: "nowrap" }}>
+                        {on ? `${hours(sample.dayMin)}h · ${sample.unit} công${sample.custom ? " (giờ riêng)" : ""}` : "nghỉ"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </ConfigForm>
       </Section>

@@ -1,7 +1,7 @@
 // Kiểm tra quy tắc tính công + phạt đi muộn (spec §3.2, §3.3) — KHÔNG cần database hay server.
 // Chạy: npm run check:rules
 
-import { calcDay, calcLate, monthlyLatePenalty, pickExemptDays, standardHoursPerDay } from "../src/lib/attendance-rules";
+import { calcDay, calcLate, monthlyLatePenalty, pickExemptDays, scheduleForDay, standardHoursPerDay } from "../src/lib/attendance-rules";
 import { SETTING_DEFAULTS } from "../src/lib/settings";
 
 const schedule = SETTING_DEFAULTS.workSchedule;
@@ -16,7 +16,7 @@ function check(name: string, got: unknown, want: unknown) {
 }
 
 const day = (checkIn: string | null, checkOut: string | null, extra: object = {}) =>
-  calcDay({ checkIn: checkIn ? at(checkIn) : null, checkOut: checkOut ? at(checkOut) : null, workday: true, exempt: false, ...extra }, schedule, config);
+  calcDay({ day: "2026-09-24", checkIn: checkIn ? at(checkIn) : null, checkOut: checkOut ? at(checkOut) : null, workday: true, exempt: false, ...extra }, schedule, config);
 
 // Phạt lũy tiến (§3.3)
 check("08:30 đúng giờ — không phạt", calcLate(at("08:30"), schedule, config), { lateMinutes: 0, penalty: 0, halfDayDeducted: false });
@@ -67,11 +67,46 @@ check("Nghỉ chiều, đến muộn 8:50 vẫn bị phạt bình thường", da
 
 // Đổi cấu hình giờ làm: 8h–12h + 13h–17h (8 giờ/ngày) → mọi công thức đổi theo
 const long: typeof schedule = { ...schedule, morningStart: "08:00", morningEnd: "12:00", afternoonStart: "13:00", afternoonEnd: "17:00" };
-const dayLong = (a: string, b: string) => calcDay({ checkIn: at(a), checkOut: at(b), workday: true, exempt: false, lateExcused: true }, long, config).workUnits;
+const dayLong = (a: string, b: string) => calcDay({ day: "2026-09-24", checkIn: at(a), checkOut: at(b), workday: true, exempt: false, lateExcused: true }, long, config).workUnits;
 check("Cấu hình 8h/ngày: 1 ngày công chuẩn = 8 giờ", standardHoursPerDay(long), 8);
 check("Cấu hình mới: 8:00 → 17:00 = 1 công", dayLong("08:00", "17:00"), 1);
 check("Cấu hình mới: 8:00 → 16:00 = 7h/8h = 0,88", dayLong("08:00", "16:00"), 0.88);
 check("Cấu hình mới: 11:00 → 17:00 = (6h − 1h nghỉ trưa)/8 = 0,63", dayLong("11:00", "17:00"), 0.63);
 check("Cấu hình mặc định: 1 ngày công chuẩn = 7,5 giờ", standardHoursPerDay(schedule), 7.5);
+// ── Giờ làm RIÊNG theo thứ (VD thứ 7 chỉ làm sáng): không dùng chung khung giờ với ngày thường ──
+// 24/09/2026 = Thứ 5, 26/09/2026 = Thứ 7, 27/09/2026 = Chủ nhật
+const satMorning: typeof schedule = { ...schedule, workWeekdays: [1, 2, 3, 4, 5, 6], daySchedules: { "6": { morningStart: "08:30", morningEnd: "12:00", afternoonStart: null, afternoonEnd: null, unit: null } } };
+const dayAt = (ymd: string, a: string | null, b: string | null, sch: typeof schedule = satMorning, extra: object = {}) =>
+  calcDay({ day: ymd, checkIn: a ? new Date(`${ymd}T${a}:00+07:00`) : null, checkOut: b ? new Date(`${ymd}T${b}:00+07:00`) : null, workday: true, exempt: false, ...extra }, sch, config);
+const SAT = "2026-09-26";
+const THU = "2026-09-24";
+
+const sat = scheduleForDay(satMorning, SAT);
+check("Thứ 7 chỉ làm sáng: 3,5 giờ, không có nghỉ trưa, tự tính 0,5 công", [sat.dayMin, sat.gap, sat.unit, sat.custom], [210, null, 0.5, true]);
+check("Thứ 5 vẫn giờ mặc định: 7,5 giờ, 1 công", [scheduleForDay(satMorning, THU).dayMin, scheduleForDay(satMorning, THU).unit, scheduleForDay(satMorning, THU).custom], [450, 1, false]);
+check("Thứ 7 đi làm đủ buổi sáng 8:30 → 12:00 = 0,5 công", dayAt(SAT, "08:30", "12:00").workUnits, 0.5);
+check("Thứ 7 chỉ làm đến 11:00 = 2,5/3,5 × 0,5 = 0,36 công", dayAt(SAT, "08:30", "11:00").workUnits, 0.36);
+check("Thứ 7 đến sớm 8:00 vẫn lấy mốc 8:30 → 0,5 công", dayAt(SAT, "08:00", "12:00").workUnits, 0.5);
+check("Thứ 7 đến 8:50 ở lại tới 12:20 (làm bù) → đủ 0,5 công", dayAt(SAT, "08:50", "12:20").workUnits, 0.5);
+check("Thứ 7 đến muộn 8:50 vẫn bị phạt bình thường (20 phút = 25.000đ)", dayAt(SAT, "08:50", "12:00").latePenalty, 25000);
+check("Thứ 7 buổi chiều không có → 13:00–17:00 chỉ tính đúng giờ có mặt trong ngày (làm bù, tối đa đủ công)", dayAt(SAT, "13:00", "17:00", satMorning, { lateExcused: true }).workUnits, 0.5);
+check("Thứ 7 đủ công của ngày = 0,5 (không phải 1)", dayAt(SAT, "08:30", "17:30").workUnits, 0.5);
+check("Miễn chấm công thứ 7 = 0,5 công, thứ 5 = 1 công", [dayAt(SAT, null, null, satMorning, { exempt: true }).workUnits, dayAt(THU, null, null, satMorning, { exempt: true }).workUnits], [0.5, 1]);
+check("Nghỉ sáng thứ 7 (ngày chỉ có buổi sáng) = nghỉ cả ngày → không có công chấm, không phạt", dayAt(SAT, "09:30", "12:00", satMorning, { leaveSession: "MORNING" }), { workUnits: 0, lateMinutes: 0, latePenalty: 0, halfDayDeducted: false });
+check("Ngày thường 5 không bị ảnh hưởng bởi cấu hình thứ 7 (8:50 → 17:30 phạt 25.000đ)", dayAt(THU, "08:50", "17:30").latePenalty, 25000);
+
+// Thứ 7 vào ca sớm hơn (8h00–11h30): phạt tính theo SỐ PHÚT MUỘN của ngày đó
+const satEarly: typeof schedule = { ...schedule, workWeekdays: [1, 2, 3, 4, 5, 6], daySchedules: { "6": { morningStart: "08:00", morningEnd: "11:30", afternoonStart: null, afternoonEnd: null, unit: null } } };
+check("Thứ 7 vào ca 8h00: 8:20 là muộn 20 phút → 25.000đ", dayAt(SAT, "08:20", "11:30", satEarly).latePenalty, 25000);
+check("Cùng 8:20 ngày thường (vào ca 8h30) thì không muộn", dayAt(THU, "08:20", "17:30", satEarly).latePenalty, 0);
+check("Thứ 7 vào ca 8h00: muộn quá 90 phút (9:35) → trừ ½ công của ngày, không phạt tiền", [dayAt(SAT, "09:35", "11:30", satEarly).latePenalty, dayAt(SAT, "09:35", "11:30", satEarly).halfDayDeducted], [0, true]);
+
+// Ngày chỉ làm chiều (VD Chủ nhật 13:30–17:30), số công đặt tay, và khung giờ khác hẳn
+const sunPm: typeof schedule = { ...schedule, workWeekdays: [1, 2, 3, 4, 5, 0], daySchedules: { "0": { morningStart: null, morningEnd: null, afternoonStart: "13:30", afternoonEnd: "17:30", unit: null } } };
+check("Chủ nhật chỉ làm chiều 13:30–17:30: đủ giờ = 0,5 công", dayAt("2026-09-27", "13:30", "17:30", sunPm).workUnits, 0.5);
+const custom6h: typeof schedule = { ...schedule, workWeekdays: [1, 2, 3, 4, 5, 6], daySchedules: { "6": { morningStart: "08:00", morningEnd: "12:00", afternoonStart: "13:00", afternoonEnd: "15:00", unit: 0.8 } } };
+check("Thứ 7 làm 8–12h + 13–15h (6 giờ), số công đặt tay 0,8: đủ giờ = 0,8", dayAt(SAT, "08:00", "15:00", custom6h).workUnits, 0.8);
+check("… làm nửa số giờ (3 giờ trên 6) = 0,4 công", dayAt(SAT, "08:00", "11:00", custom6h).workUnits, 0.4);
+check("Cấu hình hỏng (không có buổi nào) → dùng giờ mặc định", scheduleForDay({ ...schedule, daySchedules: { "6": { morningStart: null, morningEnd: null, afternoonStart: null, afternoonEnd: null, unit: null } } }, SAT).dayMin, 450);
 console.log(failed ? `\n${failed} lỗi` : "\nTất cả đều đúng");
 process.exit(failed ? 1 : 0);

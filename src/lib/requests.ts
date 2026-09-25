@@ -94,14 +94,16 @@ export function validateRequest(r: RequestInput): string | null {
   }
 }
 
-/** Số ngày công của đơn Nghỉ/WFH nằm trong tháng "YYYY-MM": chỉ đếm ngày làm việc; nửa ngày = 0,5. */
+/** Số công của đơn Nghỉ/WFH nằm trong tháng "YYYY-MM": chỉ đếm ngày làm việc (theo số công của từng ngày); nửa ngày = 0,5. */
 export function leaveUnitsInMonth(
   r: { dateFrom: string; dateTo: string; dayPortion: DayPortion | null },
   month: string,
-  isWorkday: (day: string) => boolean,
+  unitOf: (day: string) => boolean | number,
 ) {
   const perDay = !r.dayPortion || r.dayPortion === "FULL" ? 1 : 0.5;
-  return daysInRange(r.dateFrom, r.dateTo).filter((d) => d.startsWith(month) && isWorkday(d)).length * perDay;
+  // Mỗi ngày làm việc tính (cả ngày / nửa ngày) × số công của ngày đó (hàm trả về 0 nếu là ngày nghỉ, true/false cũng dùng được)
+  const total = daysInRange(r.dateFrom, r.dateTo).filter((d) => d.startsWith(month)).reduce((s, d) => s + Number(unitOf(d)), 0) * perDay;
+  return Math.round(total * 100) / 100;
 }
 
 /** Loại ngày để chọn hệ số OT: lễ tết (3x) > cuối tuần / ngày nghỉ (2x) > ngày thường (1.5x). */
