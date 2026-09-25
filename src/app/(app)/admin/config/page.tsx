@@ -1,13 +1,321 @@
-import { ComingSoon } from "@/components/ComingSoon";
+import Link from "next/link";
+import { scheduleTimes } from "@/lib/attendance-rules";
 import { requireRole } from "@/lib/auth/session";
+import { PAYSLIP_LINE_LABEL, REQUEST_TYPES, RETENTION_LABEL, SHEET_LABEL, WEEKDAY_LABEL } from "@/lib/config-validate";
+import { currentMonthVN, shiftMonth, todayVN } from "@/lib/dates";
+import { prisma } from "@/lib/db";
+import { fmtMoney } from "@/lib/format";
+import { serviceAccountEmail } from "@/lib/google-sheets";
+import { TYPE_LABEL } from "@/lib/requests";
+import { getSetting } from "@/lib/settings-db";
+import { ActionButton } from "../employees/_components/ActionButton";
+import {
+  addCalendarDay, createPerfTabAction, recalcAttendanceMonth, removeCalendarDay, saveApprovalLevels, saveCriteria, saveLatePenalty, saveLeavePolicy,
+  savePayslipLines, saveRetention, saveRolePermissions, saveSalaryParams, saveSheetLinks, saveWorkSchedule, syncPerfAction,
+} from "./actions";
+import { ConfigForm, MonthActions } from "./_components/ConfigForm";
+import { Check, Field, Section } from "./_components/ui";
 
-export default async function Page() {
+const TABS = [
+  { key: "work", label: "Giờ làm việc & lịch" },
+  { key: "late", label: "Phạt đi muộn" },
+  { key: "salary", label: "Lương & phép năm" },
+  { key: "approval", label: "Duyệt đơn & quyền" },
+  { key: "perf", label: "Performance" },
+  { key: "system", label: "Google Sheet & lưu trữ" },
+] as const;
+
+export default async function Page(props: PageProps<"/admin/config">) {
   await requireRole("ADMIN");
+  const sp = await props.searchParams;
+  const tab = TABS.find((t) => t.key === sp.tab)?.key ?? "work";
+
   return (
-    <ComingSoon
-      title="Cấu hình"
-      subtitle=""
-      features={["Lịch làm việc, bảng phạt đi muộn, tham số lương", "Tiêu chí performance, duyệt đơn theo loại", "Quyền theo role, Google Sheets, Giao diện"]}
-    />
+    <>
+      <h1>Cấu hình</h1>
+      <div className="subtitle">Mọi thay đổi đều được ghi nhật ký</div>
+      <div className="tabs">
+        {TABS.map((t) => (
+          <Link key={t.key} className={`btn sm ${t.key === tab ? "primary" : ""}`} href={`/admin/config?tab=${t.key}`}>{t.label}</Link>
+        ))}
+      </div>
+      {tab === "work" && <WorkTab year={Number(typeof sp.year === "string" && /^\d{4}$/.test(sp.year) ? sp.year : todayVN().slice(0, 4))} />}
+      {tab === "late" && <LateTab />}
+      {tab === "salary" && <SalaryTab />}
+      {tab === "approval" && <ApprovalTab />}
+      {tab === "perf" && <PerfTab />}
+      {tab === "system" && <SystemTab />}
+    </>
+  );
+}
+
+// ───────────────────────── Giờ làm việc & lịch ─────────────────────────
+
+async function WorkTab({ year }: { year: number }) {
+  const schedule = await getSetting("workSchedule");
+  const t = scheduleTimes(schedule);
+  const hours = (min: number) => Math.round((min / 60) * 100) / 100;
+  const days = await prisma.workCalendarDay.findMany({
+    where: { date: { gte: new Date(Date.UTC(year, 0, 1)), lt: new Date(Date.UTC(year + 1, 0, 1)) } },
+    orderBy: { date: "asc" },
+  });
+  const thisMonth = currentMonthVN();
+
+  return (
+    <>
+      <Section
+        title="Giờ làm việc chuẩn"
+        hint={<>Công = giờ làm thực tế ÷ giờ của 1 ngày công chuẩn; giờ nghỉ trưa chỉ trừ khi thực sự nằm trong khoảng nghỉ. Hiện tại: <b>{hours(t.dayMin)} giờ/ngày</b> ({hours(t.morningMin)}h sáng + {hours(t.afternoonMin)}h chiều), nghỉ trưa <b>{hours(t.as - t.me)} giờ</b>. Đổi khung giờ thì các con số này tự đổi theo.</>}
+      >
+        <ConfigForm action={saveWorkSchedule}>
+          <div className="grid2">
+            <Field label="Vào ca sáng" name="morningStart" type="time" defaultValue={schedule.morningStart} />
+            <Field label="Hết ca sáng" name="morningEnd" type="time" defaultValue={schedule.morningEnd} />
+            <Field label="Vào ca chiều" name="afternoonStart" type="time" defaultValue={schedule.afternoonStart} />
+            <Field label="Hết ca chiều" name="afternoonEnd" type="time" defaultValue={schedule.afternoonEnd} />
+          </div>
+          <div className="stat-label">Các ngày làm việc trong tuần</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "0 16px", marginBottom: 12 }}>
+            {[1, 2, 3, 4, 5, 6, 0].map((d) => (
+              <Check key={d} name="workWeekdays" value={String(d)} label={WEEKDAY_LABEL[d]} defaultChecked={schedule.workWeekdays.includes(d)} />
+            ))}
+          </div>
+        </ConfigForm>
+      </Section>
+
+      <Section title="Tính lại công theo cấu hình mới" hint="Đổi giờ làm hoặc bảng phạt chỉ áp dụng cho ngày tính sau đó. Bấm để tính lại toàn bộ công của 1 tháng (bỏ qua ngày Admin đã sửa tay).">
+        <MonthActions initialMonth={thisMonth} actions={[{ action: recalcAttendanceMonth, label: "Tính lại công tháng", confirm: "Tính lại công của cả tháng theo cấu hình hiện tại?" }]} />
+      </Section>
+
+      <Section title={`Ngày ngoại lệ trong lịch — ${year}`} hint="Lịch mặc định là các ngày làm việc ở trên. Thêm ngày lễ (OT hệ số 3x), ngày nghỉ bù, hoặc ngày đi làm bù (VD thứ 7). Lưu xong công của tháng đó tự tính lại.">
+        <div className="toolbar">
+          <Link className="btn sm" href={`/admin/config?tab=work&year=${year - 1}`}>‹ {year - 1}</Link>
+          <Link className="btn sm" href={`/admin/config?tab=work&year=${year + 1}`}>{year + 1} ›</Link>
+        </div>
+        <ConfigForm action={addCalendarDay} label="Thêm / cập nhật ngày">
+          <div className="grid3">
+            <Field label="Ngày" name="date" type="date" defaultValue={`${year}-${todayVN().slice(5)}`} />
+            <div className="field">
+              <label htmlFor="kind">Loại ngày</label>
+              <select id="kind" name="kind" defaultValue="HOLIDAY">
+                <option value="HOLIDAY">Nghỉ lễ / tết (OT 3x)</option>
+                <option value="OFF">Nghỉ (nghỉ bù...)</option>
+                <option value="WORK">Đi làm bù (làm việc)</option>
+              </select>
+            </div>
+            <Field label="Ghi chú" name="note" defaultValue="" hint="VD: Quốc khánh 2/9" />
+          </div>
+        </ConfigForm>
+        <div className="table-wrap" style={{ marginTop: 14 }}>
+          <table>
+            <thead><tr><th>Ngày</th><th>Loại</th><th>Ghi chú</th><th /></tr></thead>
+            <tbody>
+              {days.map((d) => {
+                const iso = d.date.toISOString().slice(0, 10);
+                return (
+                  <tr key={iso}>
+                    <td>{iso.split("-").reverse().join("/")} <span style={{ color: "var(--text-3)" }}>{WEEKDAY_LABEL[d.date.getUTCDay()]}</span></td>
+                    <td>{d.isHoliday ? <span className="badge danger xs">Nghỉ lễ</span> : d.isWorkday ? <span className="badge ok xs">Đi làm bù</span> : <span className="badge neutral xs">Nghỉ</span>}</td>
+                    <td>{d.note ?? "—"}</td>
+                    <td className="right"><ActionButton action={removeCalendarDay} fields={{ date: iso }} label="Bỏ" confirm={`Bỏ ngày ngoại lệ ${iso}?`} /></td>
+                  </tr>
+                );
+              })}
+              {days.length === 0 && <tr><td colSpan={4} className="empty">Chưa có ngày ngoại lệ nào trong năm {year}.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </Section>
+    </>
+  );
+}
+
+// ───────────────────────── Phạt đi muộn ─────────────────────────
+
+async function LateTab() {
+  const cfg = await getSetting("latePenalty");
+  const { morningStart } = await getSetting("workSchedule");
+  const rows = Array.from({ length: 8 }, (_, i) => cfg.tiers[i] ?? null);
+  return (
+    <Section title="Bảng phạt đi muộn lũy tiến" hint={<>Mỗi phút muộn tính theo mức của khung chứa phút đó (không lấy mức khung cuối cho cả buổi). Mốc vào ca hiện là <b>{morningStart}</b>. Dòng để trống sẽ bỏ qua; tối đa 8 khung.</>}>
+      <ConfigForm action={saveLatePenalty}>
+        <div className="table-wrap" style={{ marginBottom: 12 }}>
+          <table>
+            <thead><tr><th>Từ giờ</th><th>Đến giờ</th><th>Mức phạt (đ/phút)</th></tr></thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i}>
+                  <td><input name={`tierFrom${i}`} type="time" defaultValue={r?.from ?? ""} /></td>
+                  <td><input name={`tierTo${i}`} type="time" defaultValue={r?.to ?? ""} /></td>
+                  <td><input name={`tierRate${i}`} inputMode="numeric" defaultValue={r ? fmtMoney(r.perMinute) : ""} style={{ width: 120 }} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="grid2">
+          <Field label="Đến sau giờ này thì trừ ½ công (không phạt tiền)" name="halfDayAfter" type="time" defaultValue={cfg.halfDayAfter} />
+          <Field label="Số lần được miễn phạt mỗi tháng (cần đơn được duyệt)" name="freeExemptionsPerMonth" type="number" defaultValue={cfg.freeExemptionsPerMonth} />
+        </div>
+      </ConfigForm>
+    </Section>
+  );
+}
+
+// ───────────────────────── Lương & phép năm ─────────────────────────
+
+async function SalaryTab() {
+  const [p, leave] = await Promise.all([getSetting("salaryParams"), getSetting("leavePolicy")]);
+  return (
+    <>
+      <Section title="Tham số lương">
+        <ConfigForm action={saveSalaryParams}>
+          <div className="grid2">
+            <Field label="Hỗ trợ cơm (đ/tháng, chia theo ngày công)" name="mealAllowancePerMonth" defaultValue={fmtMoney(p.mealAllowancePerMonth)} />
+            <Field label="Tiền gửi xe (đ/ngày công, người gửi xe ngoài)" name="parkingPerDay" defaultValue={fmtMoney(p.parkingPerDay)} />
+          </div>
+          <div className="grid3">
+            <Field label="Hệ số OT ngày thường" name="otWeekday" defaultValue={p.otCoefficients.weekday} />
+            <Field label="Hệ số OT cuối tuần" name="otWeekend" defaultValue={p.otCoefficients.weekend} />
+            <Field label="Hệ số OT lễ tết" name="otHoliday" defaultValue={p.otCoefficients.holiday} />
+          </div>
+        </ConfigForm>
+      </Section>
+      <Section title="Phép năm" hint="Nhân sự làm từ đầu năm được đủ số ngày phép của cả năm. Nhân sự mới vào phải qua thời gian thử việc mới tính phép: tháng vào làm là tháng thứ 1, nên thử việc 2 tháng thì từ tháng thứ 3 mới tính. Trường hợp đặc biệt bật cờ “Bỏ qua thử việc” trong hồ sơ nhân sự.">
+        <ConfigForm action={saveLeavePolicy}>
+          <div className="grid2">
+            <Field label="Số ngày phép mỗi năm" name="daysPerYear" type="number" defaultValue={leave.daysPerYear} />
+            <Field label="Số tháng thử việc (chưa tính phép)" name="probationMonths" type="number" defaultValue={leave.probationMonths} />
+          </div>
+        </ConfigForm>
+      </Section>
+    </>
+  );
+}
+
+// ───────────────────────── Duyệt đơn & quyền ─────────────────────────
+
+async function ApprovalTab() {
+  const [levels, perms, lines] = await Promise.all([getSetting("approvalLevels"), getSetting("rolePermissions"), getSetting("payslipVisibleLines")]);
+  return (
+    <>
+      <Section title="Cách duyệt từng loại đơn" hint="1 cấp: Leader HOẶC Admin duyệt là xong (ai duyệt trước tính người đó). 2 cấp: Leader duyệt trước, Admin duyệt sau mới có hiệu lực (Admin cũng được duyệt thẳng). Nên dùng 2 cấp cho loại đơn ảnh hưởng tiền như OT và Tạm ứng.">
+        <ConfigForm action={saveApprovalLevels}>
+          <div className="table-wrap" style={{ marginBottom: 12 }}>
+            <table>
+              <tbody>
+                {REQUEST_TYPES.map((t) => (
+                  <tr key={t}>
+                    <td>{TYPE_LABEL[t]}</td>
+                    <td>
+                      <select name={`level_${t}`} defaultValue={String(levels[t])}>
+                        <option value="1">1 cấp (Leader hoặc Admin)</option>
+                        <option value="2">2 cấp (Leader rồi Admin)</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ConfigForm>
+      </Section>
+
+      <Section title="Quyền và nút chức năng theo role">
+        <ConfigForm action={saveRolePermissions}>
+          <div className="stat-label">Leader</div>
+          <Check name="leader_approve" label="Được duyệt đơn của team mình" defaultChecked={perms.leader.approve} />
+          <Check name="leader_editAttendance" label="Sửa chấm công team mình" hint="Chức năng này chưa có trên giao diện — hiện chỉ Admin sửa được." defaultChecked={perms.leader.editAttendance} />
+          <Check name="leader_viewSalary" label="Xem lương team mình" hint="Chưa có trên giao diện." defaultChecked={perms.leader.viewSalary} />
+          <div className="stat-label" style={{ marginTop: 10 }}>Nhân viên</div>
+          <Check name="employee_wfh" label="Hiện nút xin WFH" defaultChecked={perms.employee.wfh} />
+          <Check name="employee_advance" label="Hiện nút xin tạm ứng lương" defaultChecked={perms.employee.advance} />
+        </ConfigForm>
+      </Section>
+
+      <Section title="Dòng hiện trên phiếu lương nhân sự" hint="“Thực nhận” luôn hiện. BHXH, Thuế và Tổng chi phí nội bộ không bao giờ hiện cho nhân sự.">
+        <ConfigForm action={savePayslipLines}>
+          {(Object.keys(PAYSLIP_LINE_LABEL) as (keyof typeof PAYSLIP_LINE_LABEL)[]).map((k) => (
+            <Check key={k} name={`line_${k}`} label={PAYSLIP_LINE_LABEL[k]} defaultChecked={lines[k]} />
+          ))}
+        </ConfigForm>
+      </Section>
+    </>
+  );
+}
+
+// ───────────────────────── Performance ─────────────────────────
+
+async function PerfTab() {
+  const [criteria, sheets] = await Promise.all([
+    prisma.performanceCriterion.findMany({ orderBy: [{ group: "asc" }, { sortOrder: "asc" }] }),
+    getSetting("googleSheets"),
+  ]);
+  const total = criteria.reduce((s, c) => s + c.weight, 0);
+  const rows = [...criteria, ...Array.from({ length: 3 }, () => null)];
+  const prevMonth = shiftMonth(currentMonthVN(), -1);
+
+  return (
+    <>
+      <Section title="Tiêu chí chấm performance" hint={<>Hệ số performance = Σ(điểm tiêu chí 0–5 × trọng số %) ÷ 5. Tổng trọng số phải đúng <b>100%</b> (hiện là <b style={{ color: total === 100 ? "var(--success)" : "var(--danger)" }}>{total}%</b>). Tick “Xóa” để bỏ tiêu chí (điểm đã sync của tiêu chí đó cũng bị xóa); dòng trống ở cuối để thêm tiêu chí mới. Cột trên Google Sheet nhận diện theo <b>tên tiêu chí</b> nên đổi tên xong hãy tạo tab tháng mới.</>}>
+        <ConfigForm action={saveCriteria}>
+          <div className="table-wrap" style={{ marginBottom: 12 }}>
+            <table>
+              <thead><tr><th>Nhóm</th><th>Tên tiêu chí</th><th>Trọng số (%)</th><th>Xóa</th></tr></thead>
+              <tbody>
+                {rows.map((c, i) => (
+                  <tr key={c?.id ?? `new${i}`}>
+                    <td>
+                      <input type="hidden" name={`id${i}`} value={c?.id ?? ""} />
+                      <select name={`group${i}`} defaultValue={c?.group ?? "BASE"}>
+                        <option value="BASE">Base performance</option>
+                        <option value="OUT">Out performance</option>
+                      </select>
+                    </td>
+                    <td><input name={`name${i}`} defaultValue={c?.name ?? ""} placeholder={c ? "" : "Tiêu chí mới"} style={{ width: "100%", minWidth: 220 }} /></td>
+                    <td><input name={`weight${i}`} type="number" min={0} max={100} defaultValue={c?.weight ?? ""} style={{ width: 80 }} /></td>
+                    <td>{c && <input type="checkbox" name={`remove${i}`} aria-label="Xóa tiêu chí" />}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </ConfigForm>
+      </Section>
+
+      <Section title="Chấm điểm trên Google Sheet" hint={<>Mỗi tháng 1 tab <b>Performance YYYY-MM</b> trong file cố định (link ở tab “Google Sheet & lưu trữ”). 1) Bấm <b>Tạo tab tháng</b> → có sẵn danh sách nhân sự và cột từng tiêu chí. 2) Leader điền điểm 0–5. 3) Bấm <b>Sync ngay</b> → hệ thống lưu điểm (ô để trống = xóa điểm cũ). Tab đã có thì không bị ghi đè. Điểm chưa có thì hệ số performance = 0.</>}>
+        {!sheets.performanceSheetUrl && <div className="warn-box">Chưa nhập link file Google Sheet Performance — vào tab “Google Sheet & lưu trữ”.</div>}
+        {!serviceAccountEmail() && <div className="warn-box">Chưa cấu hình GOOGLE_SERVICE_ACCOUNT_JSON.</div>}
+        <MonthActions initialMonth={prevMonth} actions={[{ action: createPerfTabAction, label: "Tạo tab tháng" }, { action: syncPerfAction, label: "Sync ngay", primary: true }]} />
+        {sheets.performanceSheetUrl && <a className="link" href={sheets.performanceSheetUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12.5 }}>Mở file Sheet</a>}
+      </Section>
+    </>
+  );
+}
+
+// ───────────────────────── Google Sheet & lưu trữ ─────────────────────────
+
+async function SystemTab() {
+  const [sheets, retention] = await Promise.all([getSetting("googleSheets"), getSetting("retention")]);
+  const email = serviceAccountEmail();
+  return (
+    <>
+      <Section title="File Google Sheet của từng luồng" hint={<>Mỗi luồng dùng đúng <b>1 file cố định</b>; mỗi tháng chỉ thêm tab mới, không tạo file mới. Chia sẻ file cho {email ? <b>{email}</b> : "tài khoản dịch vụ Google (chưa cấu hình GOOGLE_SERVICE_ACCOUNT_JSON)"} với quyền Editor.</>}>
+        <ConfigForm action={saveSheetLinks}>
+          {(Object.keys(SHEET_LABEL) as (keyof typeof SHEET_LABEL)[]).map((k) => (
+            <Field key={k} label={SHEET_LABEL[k]} name={k} defaultValue={sheets[k]} hint={k === "performanceSheetUrl" || k === "payrollSheetUrl" ? undefined : "Luồng này chưa có trong hệ thống"} />
+          ))}
+        </ConfigForm>
+      </Section>
+      <Section title="Lưu trữ dữ liệu" hint="Job hằng ngày (npm run retention) xóa dữ liệu quá hạn khỏi database. Tính theo tháng dương lịch, giữ cả tháng hiện tại.">
+        <ConfigForm action={saveRetention}>
+          <div className="grid2">
+            {(Object.keys(RETENTION_LABEL) as (keyof typeof RETENTION_LABEL)[]).map((k) => (
+              <Field key={k} label={`${RETENTION_LABEL[k]} — số tháng`} name={k} type="number" defaultValue={retention[k]} />
+            ))}
+          </div>
+        </ConfigForm>
+      </Section>
+    </>
   );
 }

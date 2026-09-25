@@ -46,7 +46,7 @@ export const SETTING_DEFAULTS = {
     LEAVE: 1,
     WFH: 1,
     SALARY_ADVANCE: 2,
-  } satisfies Record<RequestType, 1 | 2>,
+  } as Record<RequestType, 1 | 2>,
 
   // §2 — Bật/tắt quyền & nút chức năng theo role
   rolePermissions: {
