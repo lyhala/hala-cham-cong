@@ -4,6 +4,7 @@ import type { Prisma } from "@/generated/prisma/client";
 import { getMonthSummaries } from "@/lib/attendance";
 import { prisma } from "@/lib/db";
 import { calcPayslip, calcPerfCoefficient, type PayrollResult } from "@/lib/payroll";
+import { calcTotalCost } from "@/lib/payroll-sheet";
 import { getSetting } from "@/lib/settings-db";
 
 // Cột số liệu của phiếu lương — dùng cho cả bản tính (Payslip) lẫn bản đã gửi cho nhân sự (publishedData).
@@ -84,10 +85,12 @@ export async function calculateMonth(month: string, employeeId?: string): Promis
       },
       params,
     );
+    // Tính lại làm Thực nhận đổi → Tổng chi phí (nếu HR đã điền BHXH/Thuế) phải tính lại theo; các số HR giữ nguyên
+    const existing = await prisma.payslip.findUnique({ where: { employeeId_month: { employeeId: p.id, month } } });
     await prisma.payslip.upsert({
       where: { employeeId_month: { employeeId: p.id, month } },
       create: { employeeId: p.id, month, ...result },
-      update: { ...result, calculatedAt: new Date() },
+      update: { ...result, calculatedAt: new Date(), ...(existing ? { totalCost: calcTotalCost(result.netPay, existing) } : {}) },
     });
     calculated++;
   }

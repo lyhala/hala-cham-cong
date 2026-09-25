@@ -4,8 +4,11 @@ import { currentMonthVN, isValidMonth, monthLabel, shiftMonth } from "@/lib/date
 import { prisma } from "@/lib/db";
 import { fmtMoney } from "@/lib/format";
 import { needsSend } from "@/lib/payroll-db";
+import { serviceAccountEmail } from "@/lib/google-sheets";
+import { getSetting } from "@/lib/settings-db";
 import { ActionButton } from "../employees/_components/ActionButton";
-import { calculatePayroll, sendPayroll } from "./actions";
+import { SheetUrlForm } from "./_components/SheetUrlForm";
+import { calculatePayroll, exportPayrollSheet, sendPayroll, syncPayrollSheet } from "./actions";
 
 export default async function Page(props: PageProps<"/admin/payroll">) {
   await requireRole("ADMIN");
@@ -20,6 +23,10 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
   });
   const pending = payslips.filter((p) => needsSend(p)).length;
   const totalNet = payslips.reduce((s, p) => s + p.netPay, 0);
+  const withCost = payslips.filter((p) => p.totalCost != null);
+  const totalCost = withCost.reduce((s, p) => s + (p.totalCost ?? 0), 0);
+  const { payrollSheetUrl } = await getSetting("googleSheets");
+  const accountEmail = serviceAccountEmail();
 
   const nav = (m: string) => `/admin/payroll?month=${m}`;
 
@@ -54,7 +61,33 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
         />
         <span style={{ color: "var(--text-2)", fontSize: 12.5 }}>
           {payslips.length} phiếu · Tổng thực nhận <b>{fmtMoney(totalNet)}đ</b>
+          {withCost.length > 0 && <> · Tổng chi phí ({withCost.length}/{payslips.length} người) <b>{fmtMoney(totalCost)}đ</b></>}
         </span>
+      </div>
+
+      {/* Google Sheet: xuất → HR điền BHXH/Thuế → sync ngược để có Tổng chi phí (spec §14.1) */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <div className="section-title" style={{ marginTop: 0 }}>Google Sheet — BHXH, Thuế, Tổng chi phí</div>
+        <div style={{ fontSize: 12.5, color: "var(--text-2)", marginBottom: 10, lineHeight: 1.6 }}>
+          1) Bấm <b>Xuất ra Sheet</b> → tab <b>{month}</b> trong file cố định. 2) HR điền tay 3 cột <b>BHXH (NLĐ trả)</b>, <b>BHXH (công ty trả)</b>, <b>Thuế</b> trên Sheet.
+          3) Bấm <b>Sync Tổng chi phí</b> để hệ thống đọc lại và tính. Các cột này <b>không hiện</b> trên phiếu lương gửi nhân sự.
+        </div>
+        <SheetUrlForm current={payrollSheetUrl} />
+        {!accountEmail && (
+          <div className="warn-box" style={{ marginTop: 10, marginBottom: 0 }}>
+            Chưa cấu hình <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> nên chưa xuất/sync được. Xem hướng dẫn trong .env.example.
+          </div>
+        )}
+        {accountEmail && (
+          <div style={{ fontSize: 12, color: "var(--text-3)", marginTop: 8 }}>
+            Cần chia sẻ file Sheet cho <b>{accountEmail}</b> với quyền Editor.
+          </div>
+        )}
+        <div className="toolbar" style={{ marginTop: 10, marginBottom: 0 }}>
+          <ActionButton action={exportPayrollSheet} fields={{ month }} label="Xuất ra Sheet" className="btn" />
+          <ActionButton action={syncPayrollSheet} fields={{ month }} label="Sync Tổng chi phí" className="btn" />
+          {payrollSheetUrl && <a className="link" href={payrollSheetUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12.5 }}>Mở file Sheet</a>}
+        </div>
       </div>
 
       <div className="table-wrap">
@@ -77,6 +110,10 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
               <th className="right">Phạt muộn</th>
               <th className="right">Tạm ứng</th>
               <th className="right">Thực nhận</th>
+              <th className="right">BHXH (NLĐ)</th>
+              <th className="right">BHXH (cty)</th>
+              <th className="right">Thuế</th>
+              <th className="right">Tổng chi phí</th>
               <th>Trạng thái</th>
               <th />
             </tr>
@@ -107,6 +144,10 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
                   <td className="right">{p.latePenalty ? fmtMoney(p.latePenalty) : "—"}</td>
                   <td className="right">{p.advanceDeduction ? fmtMoney(p.advanceDeduction) : "—"}</td>
                   <td className="right"><b>{fmtMoney(p.netPay)}</b></td>
+                  <td className="right">{p.bhxhEmployee != null ? fmtMoney(p.bhxhEmployee) : "—"}</td>
+                  <td className="right">{p.bhxhCompany != null ? fmtMoney(p.bhxhCompany) : "—"}</td>
+                  <td className="right">{p.tax != null ? fmtMoney(p.tax) : "—"}</td>
+                  <td className="right">{p.totalCost != null ? <b>{fmtMoney(p.totalCost)}</b> : <span className="missing">Chưa có</span>}</td>
                   <td style={{ whiteSpace: "nowrap" }}>{status}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 6 }}>
@@ -121,7 +162,7 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
             })}
             {payslips.length === 0 && (
               <tr>
-                <td colSpan={18} className="empty">Chưa có phiếu lương tháng này. Bấm “Tính lương tháng này”. Nhân sự cần có mức lương trong hồ sơ.</td>
+                <td colSpan={22}className="empty">Chưa có phiếu lương tháng này. Bấm “Tính lương tháng này”. Nhân sự cần có mức lương trong hồ sơ.</td>
               </tr>
             )}
           </tbody>

@@ -65,5 +65,61 @@ check("Thiếu 1 tiêu chí tính 0 điểm", calcPerfCoefficient([{ weight: 50,
 // Tháng chưa có ngày công (lịch trống) không chia cho 0
 check("Ngày công tháng = 0 → không lỗi", calcPayslip({ ...base, standardDays: 0 }, params).salaryByUnits, 0);
 
+// ── Bảng lương ↔ Google Sheet (§14.1) ──
+import { HEADER, LAST_COLUMN, buildSheetValues, calcTotalCost, columnLetter, parseMoneyCell, parseSheetValues, spreadsheetIdFromUrl, type SheetPayslipRow } from "../src/lib/payroll-sheet";
+
+const row = (over: Partial<SheetPayslipRow>): SheetPayslipRow => ({
+  code: "NV001", name: "Ninh Thành Vinh", team: "Joe", baseSalary: 10_000_000, perfSalary: 5_000_000, perfCoefficient: 0.8, annualLeaveUsed: 0, unpaidLeaveDays: 0,
+  actualWorkUnits: 22, standardWorkDays: 22, otHours: 0, totalUnits: 22, salaryByUnits: 10_000_000, perfActual: 4_000_000, mealAllowance: 1_250_000,
+  parkingAllowance: 0, latePenalty: 0, advanceDeduction: 0, netPay: 15_250_000, bhxhEmployee: null, bhxhCompany: null, tax: null, ...over,
+});
+
+check("Tổng chi phí = thực nhận + BHXH NLĐ + BHXH cty + thuế", calcTotalCost(15_250_000, { bhxhEmployee: 1_050_000, bhxhCompany: 2_200_000, tax: 300_000 }), 18_800_000);
+check("Chưa điền gì → chưa có tổng chi phí", calcTotalCost(15_250_000, { bhxhEmployee: null, bhxhCompany: null, tax: null }), null);
+check("Điền 1 ô, ô trống tính 0", calcTotalCost(15_250_000, { bhxhEmployee: null, bhxhCompany: 2_200_000, tax: null }), 17_450_000);
+check("Điền 0 rõ ràng vẫn tính", calcTotalCost(15_250_000, { bhxhEmployee: 0, bhxhCompany: 0, tax: 0 }), 15_250_000);
+
+check("Ô '1.250.000' → số", parseMoneyCell("1.250.000"), 1_250_000);
+check("Ô '1,250,000 đ' → số", parseMoneyCell("1,250,000 đ"), 1_250_000);
+check("Ô số 1250000.4 → làm tròn", parseMoneyCell(1250000.4), 1_250_000);
+check("Ô trống → null", parseMoneyCell(""), null);
+check("Ô chữ → invalid", parseMoneyCell("abc"), "invalid");
+check("Ô số âm → invalid", parseMoneyCell(-5), "invalid");
+check("Cột 0=A, 25=Z, 26=AA", [columnLetter(0), columnLetter(25), columnLetter(26)], ["A", "Z", "AA"]);
+check("Cột cuối của tab", LAST_COLUMN, "W");
+
+const built = buildSheetValues([row({}), row({ code: "NV002", name: "B", netPay: 1 })]);
+check("Có dòng tiêu đề + 2 dòng nhân sự", built.length, 3);
+check("Tiêu đề có 23 cột", built[0].length, 23);
+check("Dòng 2 có công thức tổng chi phí", built[1][22], "=S2+SUM(T2:V2)");
+check("Dòng 3 có công thức tổng chi phí", built[2][22], "=S3+SUM(T3:V3)");
+check("Xuất lần đầu: 3 ô HR trống", built[1].slice(19, 22), ["", "", ""]);
+
+// Xuất lại: giữ số HR đã gõ trên Sheet; ô trống thì lấy số lưu trong hệ thống
+const again = buildSheetValues([row({ tax: 100 }), row({ code: "NV002" })], new Map([["NV001", { bhxhEmployee: 999, bhxhCompany: null, tax: null }]]));
+check("Giữ số đang gõ trên Sheet", again[1][19], 999);
+check("Ô Sheet trống → lấy số trong hệ thống", again[1][21], 100);
+check("Người khác không bị ảnh hưởng", again[2].slice(19, 22), ["", "", ""]);
+
+// Đọc lại từ Sheet (thứ tự cột có thể bị HR đổi)
+const sheet: unknown[][] = [
+  ["Thuế", "Mã NV", "BHXH (NLĐ trả)", "BHXH (công ty trả)", "Thực nhận"],
+  [300000, "nv001", 1050000, "2.200.000", 15250000],
+  ["", "NV002", "", "", 1],
+  ["", "", "", "", ""],
+  ["x", "NV003", 1, 2, 3],
+];
+const parsed = parseSheetValues(sheet);
+check("Đọc đúng dòng hợp lệ", parsed.rows, [
+  { code: "NV001", bhxhEmployee: 1_050_000, bhxhCompany: 2_200_000, tax: 300_000 },
+  { code: "NV002", bhxhEmployee: null, bhxhCompany: null, tax: null },
+]);
+check("Báo lỗi dòng có chữ", parsed.errors.length, 1);
+check("Lỗi ghi rõ dòng và mã NV", parsed.errors[0].includes("Dòng 5 (NV003)"), true);
+check("Tab sai định dạng bị báo", parseSheetValues([["a", "b"]]).errors.length, 1);
+check("Thiếu cột Thuế bị báo", parseSheetValues([[HEADER.code, HEADER.bhxhEmployee, HEADER.bhxhCompany]]).errors[0].includes("Thuế"), true);
+
+check("Lấy ID từ link Sheet", spreadsheetIdFromUrl("https://docs.google.com/spreadsheets/d/1AbC_-x9/edit#gid=0"), "1AbC_-x9");
+check("Link không phải Sheet", spreadsheetIdFromUrl("https://example.com/spreadsheets/d/abc"), null);
 console.log(failed ? `\n${failed} lỗi` : "\nTất cả đều đúng");
 process.exit(failed ? 1 : 0);
