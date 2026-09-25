@@ -143,10 +143,9 @@ export async function rejectRequest(actor: Actor, id: string, reason: string): P
   const role = await approverRole(actor, req);
   if (!role) return fail("Bạn không có quyền xử lý đơn này");
   if (req.status !== "PENDING" && !(req.status === "LEADER_APPROVED" && role === "ADMIN")) return fail("Đơn này không còn ở trạng thái chờ duyệt");
-  if (!reason.trim()) return fail("Vui lòng nhập lý do từ chối");
 
-  await prisma.request.update({ where: { id }, data: { status: "REJECTED", rejectedById: actor.id, rejectedAt: new Date(), rejectReason: reason.trim().slice(0, 500) } });
-  await logAudit({ actorId: actor.id, action: "request.reject", targetType: "Request", targetId: id, summary: `Từ chối đơn ${TYPE_LABEL[req.type]} của ${req.employee.name} (${req.employee.code}): ${reason.trim().slice(0, 100)}` });
+  await prisma.request.update({ where: { id }, data: { status: "REJECTED", rejectedById: actor.id, rejectedAt: new Date(), rejectReason: reason.trim().slice(0, 500) || null } });
+  await logAudit({ actorId: actor.id, action: "request.reject", targetType: "Request", targetId: id, summary: `Từ chối đơn ${TYPE_LABEL[req.type]} của ${req.employee.name} (${req.employee.code})${reason.trim() ? `: ${reason.trim().slice(0, 100)}` : ""}` });
   await notify([req.employeeId], "REQUEST_REJECTED", `Đơn ${TYPE_LABEL[req.type]} của bạn bị từ chối`);
   return { ok: true, message: "Đã từ chối đơn." };
 }

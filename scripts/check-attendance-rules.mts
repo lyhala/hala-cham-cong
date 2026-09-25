@@ -60,8 +60,9 @@ check("Về 19:00 sau khi đến 8:30 vẫn tối đa 1 công", day("08:30", "19
 const morningLeave = day("13:30", "17:30", { leaveSession: "MORNING" });
 check("Nghỉ sáng, đi làm đủ buổi chiều = 0,5 công, không phạt", [morningLeave.workUnits, morningLeave.latePenalty, morningLeave.halfDayDeducted], [0.5, 0, false]);
 const lateAfternoon = day("14:00", "17:30", { leaveSession: "MORNING" });
-check("Nghỉ sáng, vào chiều muộn 30' = 3,5/4 × 0,5 = 0,44, không phạt tiền", [lateAfternoon.workUnits, lateAfternoon.lateMinutes, lateAfternoon.latePenalty], [0.44, 30, 0]);
-check("Nghỉ chiều, đi làm đủ buổi sáng = 0,5 công", day("08:30", "12:00", { leaveSession: "AFTERNOON" }).workUnits, 0.5);
+check("Nghỉ sáng, vào chiều muộn 30' = 3,5h/7,5 = 0,47 (bị trừ công) nhưng không phạt tiền", [lateAfternoon.workUnits, lateAfternoon.lateMinutes, lateAfternoon.latePenalty], [0.47, 30, 0]);
+check("Nghỉ chiều, đi làm đủ buổi sáng = 3,5h/7,5 = 0,47 công", day("08:30", "12:00", { leaveSession: "AFTERNOON" }).workUnits, 0.47);
+check("Nghỉ sáng, đi làm đủ buổi chiều: 4h/7,5 vượt 0,5 nên chốt 0,5 (cộng 0,5 từ đơn nghỉ = 1 công)", day("13:30", "17:30", { leaveSession: "MORNING" }).workUnits, 0.5);
 check("Nghỉ chiều, đến muộn 8:50 vẫn bị phạt bình thường", day("08:50", "12:00", { leaveSession: "AFTERNOON" }).latePenalty, 25000);
 
 // Đổi cấu hình giờ làm: 8h–12h + 13h–17h (8 giờ/ngày) → mọi công thức đổi theo

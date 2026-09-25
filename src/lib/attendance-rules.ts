@@ -94,8 +94,8 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
  *   VD 11h30 → 17h30 = 6 giờ có mặt − 1,5 giờ nghỉ trưa = 4,5 giờ (không phải 6); 13h30 → 17h30 = 4 giờ (không trừ gì).
  * - Đến muộn thì làm bù buổi tối vẫn được cộng (giờ đến thực tế, không theo giờ ghi trong đơn xin đi muộn):
  *   đủ công khi ở lại tới giờ đến + giờ công chuẩn + nghỉ trưa. Tối đa 1 công/ngày.
- * - Ngày có đơn nghỉ / WFH NỬA NGÀY được duyệt: chỉ xét buổi còn lại (không phạt đi muộn buổi đã nghỉ), công của buổi
- *   này tối đa 0,5 (buổi được đi làm đủ = 0,5 công + 0,5 công từ đơn nghỉ = 1 công).
+ * - Ngày có đơn nghỉ / WFH NỬA NGÀY được duyệt: chỉ xét buổi còn lại (không phạt tiền đi muộn buổi đã nghỉ), công của buổi
+ *   này = giờ làm thực tế ÷ giờ công chuẩn, tối đa 0,5; vào muộn thì vẫn bị trừ công. Cộng 0,5 công từ đơn nghỉ.
  * - Có checkin mà chưa có checkout: 0 công (chưa đủ dữ liệu; Admin sửa tay được).
  * - Đến sau 10h mà KHÔNG có đơn được miễn: trừ thêm 1/2 công vào công thực, không phạt tiền.
  *   Có đơn được miễn thì tính công bình thường theo giờ thực tế (VD đến 10h, về 17h30 = 6/7,5 công; muốn đủ công phải ở lại tới 19h).
@@ -120,8 +120,9 @@ export function calcDay(input: DayInput, schedule: WorkSchedule, config: LatePen
   const outMin = minuteOfDayVN(input.checkOut);
   let units: number;
   if (input.leaveSession) {
-    const [from, to, sessionMin] = input.leaveSession === "MORNING" ? [t.as, t.ae, t.afternoonMin] : [t.ms, t.me, t.morningMin];
-    units = sessionMin > 0 ? 0.5 * Math.min(1, overlap(inMin, outMin, from, to) / sessionMin) : 0;
+    // Giờ làm thực tế trong buổi còn lại ÷ giờ công chuẩn (vào muộn buổi này thì bị trừ công), tối đa 0,5 vì 0,5 còn lại là công từ đơn nghỉ
+    const [from, to] = input.leaveSession === "MORNING" ? [t.as, t.ae] : [t.ms, t.me];
+    units = Math.min(0.5, overlap(inMin, outMin, from, to) / t.dayMin);
   } else {
     const start = Math.max(inMin, t.ms); // đến sớm hơn giờ vào ca thì lấy giờ vào ca làm mốc
     const present = Math.max(0, outMin - start);
