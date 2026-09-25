@@ -51,7 +51,7 @@ export function CalendarLegend() {
   return (
     <div className="cal-legend">
       <span><i className="ok" /> Đủ công</span>
-      <span><i className="issue" /> Cần kiểm tra (muộn, thiếu công, nghỉ)</span>
+      <span><i className="issue" /> Chưa đủ công</span>
       <span><i className="off" /> Ngày nghỉ</span>
     </div>
   );

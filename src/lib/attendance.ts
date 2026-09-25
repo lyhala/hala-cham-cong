@@ -137,7 +137,7 @@ async function loadMonthCalendar(month: string) {
   return { days, standardDays: days.filter((d) => d.workday).length };
 }
 
-// ok = ngày làm việc đủ công · issue = cần kiểm tra (đi muộn, thiếu công, không có dữ liệu/nghỉ) · off = ngày nghỉ · future = chưa tới
+// ok = ngày làm việc đủ 1 công · issue = chưa đủ công (nguyên nhân: đi muộn, về sớm, nghỉ...) · off = ngày nghỉ · future = chưa tới
 export type DayStatus = "ok" | "issue" | "off" | "future";
 
 export type DayView = {
@@ -179,7 +179,7 @@ export async function getMonthAttendance(employeeId: string, month: string) {
     if (!c.workday) status = "off";
     else if (c.day > today) status = "future";
     else if (exempt) status = "ok";
-    else if (r?.checkIn && workUnits >= 1 && r.lateMinutes === 0) status = "ok";
+    else if (workUnits >= 1) status = "ok"; // Chỉ xét số công: đủ 1 công (kể cả Admin sửa tay) là xanh
     else status = "issue";
     return {
       day: c.day,
