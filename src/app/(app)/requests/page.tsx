@@ -1,7 +1,13 @@
 import Link from "next/link";
-import { ComingSoon } from "@/components/ComingSoon";
 import { requireUser } from "@/lib/auth/session";
-import { prisma } from "@/lib/db";
+import { todayVN } from "@/lib/dates";
+import { countToApprove, lateWarning, listMyRequests, listProcessed, listToApprove } from "@/lib/requests-db";
+import { getSetting } from "@/lib/settings-db";
+import { ActionButton } from "../admin/employees/_components/ActionButton";
+import { approveRequestAction, deleteRequestAction, withdrawRequestAction } from "./actions";
+import { CreateRequestForm } from "./_components/CreateRequestForm";
+import { RejectForm } from "./_components/RejectForm";
+import { RequestCard } from "./_components/RequestCard";
 
 // Đơn từ: tab "Đơn của tôi" (mọi role) + tab "Duyệt đơn" (Leader: đơn của team; Admin: toàn công ty).
 export default async function RequestsPage(props: PageProps<"/requests">) {
@@ -9,17 +15,7 @@ export default async function RequestsPage(props: PageProps<"/requests">) {
   const canApprove = user.role === "LEADER" || user.role === "ADMIN";
   const sp = await props.searchParams;
   const tab = canApprove && sp.tab === "approve" ? "approve" : "mine";
-
-  const pendingToApprove = canApprove
-    ? await prisma.request.count({
-        where: {
-          status: user.role === "ADMIN" ? { in: ["PENDING", "LEADER_APPROVED"] } : "PENDING",
-          deletedAt: null,
-          employeeId: { not: user.id },
-          ...(user.role === "LEADER" ? { employee: { teamId: user.teamId ?? "__none__" } } : {}),
-        },
-      })
-    : 0;
+  const pendingToApprove = canApprove ? await countToApprove(user) : 0;
 
   return (
     <>
@@ -31,27 +27,67 @@ export default async function RequestsPage(props: PageProps<"/requests">) {
           </Link>
         </div>
       )}
-      {tab === "mine" ? (
-        <ComingSoon
-          title="Đơn của tôi"
-          subtitle="Tạo, theo dõi và thu hồi đơn"
-          features={[
-            "Tạo đơn: OT, Đi muộn, Về sớm, Nghỉ, WFH, Tạm ứng lương",
-            "Danh sách đơn đã gửi + trạng thái duyệt",
-            "Thu hồi đơn đang chờ duyệt",
-          ]}
-        />
-      ) : (
-        <ComingSoon
-          title="Duyệt đơn"
-          subtitle={user.role === "ADMIN" ? "Toàn công ty — toàn quyền duyệt / từ chối / xóa" : "Đơn của team bạn"}
-          features={[
-            "Danh sách đơn chờ duyệt, duyệt / từ chối",
-            "Cảnh báo vượt 3 lần miễn phạt đi muộn",
-            user.role === "ADMIN" ? "Xóa mọi đơn (kể cả đã duyệt) → tự revert công" : "Xóa đơn của team → tự revert công",
-          ]}
-        />
-      )}
+      {tab === "mine" ? <MyRequests userId={user.id} isAdmin={user.role === "ADMIN"} /> : <Approvals user={user} />}
+    </>
+  );
+}
+
+async function MyRequests({ userId, isAdmin }: { userId: string; isAdmin: boolean }) {
+  const [requests, perms] = await Promise.all([listMyRequests(userId), getSetting("rolePermissions")]);
+  // Admin bật/tắt nút chức năng theo role (§2)
+  const types = (["OT", "LATE", "EARLY_LEAVE", "LEAVE", ...(isAdmin || perms.employee.wfh ? ["WFH"] : []), ...(isAdmin || perms.employee.advance ? ["SALARY_ADVANCE"] : [])]) as ("OT" | "LATE" | "EARLY_LEAVE" | "LEAVE" | "WFH" | "SALARY_ADVANCE")[];
+
+  return (
+    <>
+      <h1>Đơn của tôi</h1>
+      <div className="subtitle">Tạo, theo dõi và thu hồi đơn</div>
+      <CreateRequestForm types={types} today={todayVN()} />
+      {requests.length === 0 && <div className="card empty">Bạn chưa gửi đơn nào.</div>}
+      {requests.map((r) => (
+        <RequestCard key={r.id} r={r}>
+          {(r.status === "PENDING" || r.status === "LEADER_APPROVED") && (
+            <ActionButton action={withdrawRequestAction} fields={{ id: r.id }} label="Thu hồi" confirm="Thu hồi đơn này?" />
+          )}
+        </RequestCard>
+      ))}
+    </>
+  );
+}
+
+async function Approvals({ user }: { user: { id: string; name: string; role: "EMPLOYEE" | "LEADER" | "ADMIN" } }) {
+  const [pending, processed] = await Promise.all([listToApprove(user), listProcessed(user)]);
+  // Cảnh báo cho Leader/Admin khi duyệt đơn đi muộn vượt số suất miễn phạt (chỉ tính đơn ĐÃ duyệt)
+  const warnings = await Promise.all(pending.map((r) => (r.type === "LATE" ? lateWarning(r, false) : Promise.resolve(null))));
+  const owner = (r: { employee: { name: string; code: string; team: { name: string } | null } }) => ({ name: r.employee.name, code: r.employee.code, team: r.employee.team?.name ?? null });
+
+  return (
+    <>
+      <h1>Duyệt đơn</h1>
+      <div className="subtitle">{user.role === "ADMIN" ? "Toàn công ty — toàn quyền duyệt / từ chối / xóa" : "Đơn của team bạn"}</div>
+
+      <div className="section-title" style={{ marginTop: 0 }}>Chờ duyệt ({pending.length})</div>
+      {pending.length === 0 && <div className="card empty">Không có đơn nào chờ duyệt.</div>}
+      {pending.map((r, i) => (
+        <RequestCard key={r.id} r={r} owner={owner(r)} warning={warnings[i]}>
+          <ActionButton action={approveRequestAction} fields={{ id: r.id }} label={r.status === "LEADER_APPROVED" ? "Duyệt (Admin)" : "Duyệt"} className="btn sm primary" />
+          <RejectForm id={r.id} />
+          <ActionButton action={deleteRequestAction} fields={{ id: r.id }} label="Xóa" className="btn sm" confirm="Xóa đơn này?" />
+        </RequestCard>
+      ))}
+
+      <div className="section-title">Đã xử lý 30 ngày gần đây</div>
+      {processed.length === 0 && <div className="card empty">Chưa có đơn nào.</div>}
+      {processed.map((r) => (
+        <RequestCard key={r.id} r={r} owner={owner(r)}>
+          <ActionButton
+            action={deleteRequestAction}
+            fields={{ id: r.id }}
+            label="Xóa"
+            className="btn sm"
+            confirm={r.status === "APPROVED" ? "Xóa đơn ĐÃ DUYỆT? Phần công / miễn phạt đã áp dụng sẽ được hoàn lại." : "Xóa đơn này?"}
+          />
+        </RequestCard>
+      ))}
     </>
   );
 }
