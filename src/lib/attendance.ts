@@ -260,8 +260,22 @@ export async function getMonthSummaries(month: string) {
   };
 }
 
+/**
+ * Gắn personID của Hanet vào nhân sự có Mã NV = aliasID (chỉ khi nhân sự đó chưa gắn FaceID nào).
+ * Trả về nhân sự được gắn, hoặc null nếu không có Mã NV khớp / đã gắn personID khác.
+ */
+export async function linkHanetPerson(hanetPersonId: string, aliasId: string) {
+  const employee = await prisma.employee.findUnique({ where: { code: aliasId.toUpperCase() }, select: { id: true, hanetPersonId: true } });
+  if (!employee) return null;
+  if (employee.hanetPersonId === hanetPersonId) return { id: employee.id };
+  if (employee.hanetPersonId) return null;
+  await prisma.employee.update({ where: { id: employee.id }, data: { hanetPersonId } });
+  return { id: employee.id };
+}
+
 export type HanetLogInput = {
   hanetPersonId: string;
+  aliasId: string | null;
   deviceId: string | null;
   time: Date;
   imageUrl: string | null;
@@ -276,10 +290,10 @@ export async function recordHanetLog(input: HanetLogInput) {
   });
   if (duplicate) return { status: "duplicate" as const };
 
-  const employee = await prisma.employee.findUnique({
-    where: { hanetPersonId: input.hanetPersonId },
-    select: { id: true },
-  });
+  // Map theo personID đã lưu; chưa có thì dùng aliasID (= Mã NV lúc đăng ký FaceID) rồi lưu lại personID cho lần sau
+  const employee =
+    (await prisma.employee.findUnique({ where: { hanetPersonId: input.hanetPersonId }, select: { id: true } })) ??
+    (input.aliasId ? await linkHanetPerson(input.hanetPersonId, input.aliasId) : null);
 
   await prisma.attendanceLog.create({
     data: {
