@@ -47,7 +47,7 @@ export function EditDayForm({ employeeId, day, checkIn, checkOut, workUnits, not
         </div>
         <div className="grid2">
           <div className="field">
-            <label htmlFor="workUnits">Số công (để trống = tự tính; trên công của ngày = bù công, không giới hạn)</label>
+            <label htmlFor="workUnits">Số công (để trống = tự tính từ giờ vào/ra)</label>
             <input id="workUnits" name="workUnits" inputMode="decimal" placeholder={`Hiện tại: ${workUnits}`} />
           </div>
           <div className="field">

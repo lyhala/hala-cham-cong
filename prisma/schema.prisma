@@ -172,6 +172,8 @@ model Employee {
   auditLogs         AuditLog[]
   settingsUpdated   Setting[]
   leaveAdjustments  LeaveAdjustment[] @relation("LeaveAdjustmentEmployee")
+  workUnitBonuses   WorkUnitBonus[]   @relation("WorkUnitBonusEmployee")
+  workUnitBonusesMade WorkUnitBonus[] @relation("WorkUnitBonusCreatedBy")
   leaveAdjustmentsMade LeaveAdjustment[] @relation("LeaveAdjustmentCreatedBy")
 }
 
@@ -273,6 +275,23 @@ model LeaveAdjustment {
   createdAt   DateTime  @default(now())
 
   @@index([employeeId, year])
+}
+
+// Công BÙ do Admin nhập RIÊNG theo nhân sự + tháng (đền bù ngày phép, đền bù chuyến du lịch không đi được...). Cộng vào Tổng công của phiếu lương
+// tháng đó, không giới hạn trần, chỉ nhân với lương base. KHÔNG dùng chung với sửa công (sửa công chỉ để chỉnh cho khớp thực tế).
+model WorkUnitBonus {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation("WorkUnitBonusEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  month       String // "YYYY-MM" — phiếu lương tháng nhận công bù
+  units       Float // Số công bù (dương)
+  note        String
+  createdById String?
+  createdBy   Employee? @relation("WorkUnitBonusCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([employeeId, month])
+  @@index([month])
 }
 
 // ───────────────────────── Đơn từ (§5) ─────────────────────────

@@ -89,7 +89,7 @@ export function DayDetail({ day, children }: { day: DayView; children?: React.Re
       <div className="grid3">
         <div><div className="stat-label">Check-in</div><b>{day.checkIn ? timeVN(day.checkIn) : "—"}</b></div>
         <div><div className="stat-label">Check-out</div><b>{day.checkOut ? timeVN(day.checkOut) : day.checkIn ? "Chưa về" : "—"}</b></div>
-        <div><div className="stat-label">Số công</div><b>{day.isManual ? day.workUnits + day.paidUnits : Math.min(day.dayUnit || 1, day.workUnits + day.paidUnits)}</b>{day.dayUnit > 0 && day.dayUnit !== 1 && <span style={{ fontSize: 11, color: "var(--text-3)" }}> / {day.dayUnit} (ngày làm nửa buổi)</span>}{day.isManual && day.workUnits + day.paidUnits > (day.dayUnit || 1) && <span style={{ fontSize: 11, color: "var(--success)" }}> (bù công +{Math.round((day.workUnits + day.paidUnits - (day.dayUnit || 1)) * 100) / 100})</span>}</div>
+        <div><div className="stat-label">Số công</div><b>{Math.min(day.dayUnit || 1, day.workUnits + day.paidUnits)}</b>{day.dayUnit > 0 && day.dayUnit !== 1 && <span style={{ fontSize: 11, color: "var(--text-3)" }}> / {day.dayUnit} (ngày làm nửa buổi)</span>}</div>
         <div><div className="stat-label">Đi muộn</div><b>{day.lateMinutes > 0 ? `${day.lateMinutes} phút` : "—"}</b></div>
         <div>
           <div className="stat-label">Tiền phạt</div>

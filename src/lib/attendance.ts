@@ -222,8 +222,8 @@ export async function getMonthAttendance(employeeId: string, month: string) {
     const r = byDay.get(c.day);
     const lateExcused = excused.has(c.day);
     // Miễn chấm công: mọi ngày làm việc (đã tới) tự đủ 1 công, bỏ qua dữ liệu Hanet
-    // Miễn chấm công: tự đủ công ngày làm việc đã qua, bỏ qua Hanet — TRỪ ngày Admin đã sửa tay (bù công / trừ công) thì lấy số đã nhập
-    const workUnits = exempt && !r?.isManual ? (c.workday && c.day <= today ? c.unit : 0) : (r?.workUnits ?? 0);
+    // Miễn chấm công: tự đủ công ngày làm việc đã qua, bỏ qua Hanet — TRỪ ngày Admin đã sửa tay (trừ công...) thì lấy số đã nhập. Tối đa đủ công của ngày.
+    const workUnits = Math.min(c.unit, exempt && !r?.isManual ? (c.workday && c.day <= today ? c.unit : 0) : (r?.workUnits ?? 0));
     const leave = c.workday ? leaveByDay.get(c.day) : undefined;
     const paidUnits = leave?.paidUnits ?? 0;
     let status: DayStatus;
@@ -259,7 +259,8 @@ function summarizeDays(days: DayView[], standardDays: number) {
   return {
     standardDays,
     // Ngày Admin sửa tay được tính đúng số công đã nhập (kể cả trên 1 = bù công); các ngày còn lại tối đa đủ công của ngày
-    workUnits: Math.round(days.reduce((s, d) => s + (d.isManual ? d.workUnits + d.paidUnits : Math.min(d.dayUnit || 1, d.workUnits + d.paidUnits)), 0) * 100) / 100,
+    // Mỗi ngày tối đa đủ công của ngày (sửa công chỉ để chỉnh cho khớp thực tế; muốn đền bù thì dùng "Công bù" riêng ở Bảng lương)
+    workUnits: Math.round(days.reduce((s, d) => s + Math.min(d.dayUnit, d.workUnits + d.paidUnits), 0) * 100) / 100,
     lateDays: days.filter((d) => d.lateMinutes > 0).length,
     lateMinutes: days.reduce((s, d) => s + d.lateMinutes, 0),
     // Tiền phạt sau khi trừ các ngày được miễn (§3.3)
@@ -319,17 +320,16 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
         exempt: e.attendanceExempt,
         parkingOutside: e.parkingOutside,
         leftAt: e.leftAt,
-        // Công BÙ: phần Admin sửa tay vượt công của ngày (VD nhập 2 công cho ngày 1 công → bù 1). Tính thêm NGOÀI trần ngày công tháng của lương
-        bonusUnits: Math.round(mine.filter((r) => r.isManual).reduce((s, r) => s + Math.max(0, r.workUnits - (unitByDay.get(r.date.toISOString().slice(0, 10)) ?? 0)), 0) * 100) / 100,
-        // Miễn chấm công: mỗi ngày làm việc đã qua tự đủ công; ngày Admin đã sửa tay (bù / trừ công) lấy số đã nhập
+        // Miễn chấm công: mỗi ngày làm việc đã qua tự đủ công; ngày Admin đã sửa tay (trừ công...) lấy số đã nhập.
+        // Mỗi ngày tối đa đủ công của ngày — công BÙ (đền bù) nhập riêng ở Bảng lương, không đi qua chấm công.
         workUnits: e.attendanceExempt
           ? Math.round(
               calendar.days.reduce((s, d) => {
                 const manual = mine.find((r) => r.isManual && r.date.toISOString().slice(0, 10) === d.day);
-                return s + (manual ? manual.workUnits : d.workday && d.day <= today ? d.unit : 0);
+                return s + (manual ? Math.min(manual.workUnits, d.unit) : d.workday && d.day <= today ? d.unit : 0);
               }, 0) * 100,
             ) / 100
-          : Math.round(mine.reduce((s, r) => s + r.workUnits, 0) * 100) / 100,
+          : Math.round(mine.reduce((s, r) => s + Math.min(r.workUnits, unitByDay.get(r.date.toISOString().slice(0, 10)) ?? 0), 0) * 100) / 100,
         lateDays: mine.filter((r) => r.lateMinutes > 0).length,
         latePenalty: mine.reduce((s, r) => (excused.has(r.date.toISOString().slice(0, 10)) ? s : s + r.latePenalty), 0),
       };

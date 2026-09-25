@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { logAudit } from "@/lib/audit";
 import { requireRole } from "@/lib/auth/session";
-import { calcForDay, refreshDailyAttendance } from "@/lib/attendance";
+import { calcForDay, getDayUnitChecker, refreshDailyAttendance } from "@/lib/attendance";
 import { prisma } from "@/lib/db";
 import { timeVN } from "@/lib/dates";
 
@@ -49,10 +49,13 @@ export async function saveAttendanceDay(_prev: AttendanceActionState, fd: FormDa
   const calc = await calcForDay(employeeId, day, checkIn, checkOut);
   if (parsed.data.workUnits) {
     const units = Number(parsed.data.workUnits.replace(",", "."));
-    // Trên 1 công là BÙ CÔNG (VD đền bù ngày phép tồn, đền bù chuyến du lịch không đi được) — KHÔNG giới hạn trần;
-    // chỉ chặn số âm / không phải số và số vô lý (> 1.000 công, thường do nhập nhầm dấu chấm phẩy)
+    // Sửa công chỉ để chỉnh cho KHỚP THỰC TẾ (quên checkout, máy chấm công lỗi...) nên tối đa đủ công của ngày.
+    // Muốn đền bù thêm công thì dùng mục "Công bù" riêng ở Bảng lương.
+    const dayUnit = (await getDayUnitChecker(day, day))(day);
     if (!Number.isFinite(units) || units < 0) return { error: "Số công phải là số từ 0 trở lên" };
-    if (units > 1000) return { error: "Số công quá lớn — kiểm tra lại (VD nhập nhầm dấu chấm / phẩy)" };
+    if (units > dayUnit + 1e-9) {
+      return { error: `${dayUnit > 0 ? `Số công tối đa của ngày này là ${dayUnit}` : "Ngày này không phải ngày làm việc nên không có công"}. Sửa công chỉ để chỉnh cho khớp thực tế; muốn đền bù thêm công, dùng mục "Công bù" ở Bảng lương.` };
+    }
     calc.workUnits = Math.round(units * 100) / 100;
   }
 

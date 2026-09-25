@@ -55,6 +55,10 @@ export async function calculateMonth(month: string, employeeId?: string): Promis
   const people = summaries.rows.filter((r) => !employeeId || r.id === employeeId);
   const ids = people.map((p) => p.id);
   const adjustments = await requestAdjustments(month, ids, calendar, params);
+  // Công BÙ Admin nhập riêng cho tháng này (Bảng lương → cột Công bù), cộng dồn nhiều khoản
+  const bonusOf = new Map(
+    (await prisma.workUnitBonus.groupBy({ by: ["employeeId"], where: { month, employeeId: { in: ids } }, _sum: { units: true } })).map((g) => [g.employeeId, g._sum.units ?? 0]),
+  );
   // Phép tồn quy đổi ra lương: TỰ ĐỘNG cho cả công ty ở phiếu tháng 12 (hết năm) và cho người nghỉ việc ở tháng nghỉ việc;
   // các tháng khác chỉ quy đổi cho người Admin đã tick "quy đổi phép" trên phiếu (VD xin nghỉ giữa năm còn dư phép).
   const ticked = new Set(
@@ -95,8 +99,8 @@ export async function calculateMonth(month: string, employeeId?: string): Promis
         baseSalary: salary.baseSalary,
         perfSalary: salary.perfSalary,
         perfCoefficient,
-        attendanceUnits: Math.round((p.workUnits - p.bonusUnits) * 100) / 100,
-        bonusUnits: p.bonusUnits,
+        attendanceUnits: p.workUnits,
+        bonusUnits: Math.round((bonusOf.get(p.id) ?? 0) * 100) / 100,
         parkingOutside: p.parkingOutside,
         latePenalty: p.latePenalty,
         leavePayoutDays: leave.get(p.id)?.toPayOut ?? 0,

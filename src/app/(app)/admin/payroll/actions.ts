@@ -6,6 +6,7 @@ import { requireRole } from "@/lib/auth/session";
 import { isValidMonth } from "@/lib/dates";
 import { prisma } from "@/lib/db";
 import { SheetsError } from "@/lib/google-sheets";
+import { addWorkBonus, deleteWorkBonus } from "@/lib/bonus-db";
 import { calculateMonth, sendPayslips } from "@/lib/payroll-db";
 import { exportPayrollToSheet, syncPayrollFromSheet } from "@/lib/payroll-sheet-db";
 import { spreadsheetIdFromUrl } from "@/lib/payroll-sheet";
@@ -118,6 +119,37 @@ export async function savePayrollSheetUrl(_prev: PayrollActionState, fd: FormDat
   await logAudit({ actorId: admin.id, action: "config.update", targetType: "Setting", targetId: "googleSheets", summary: "Đặt link file Google Sheet Bảng lương" });
   refresh();
   return { ok: true, message: "Đã lưu link file Sheet." };
+}
+
+/**
+ * Thêm công bù cho 1 nhân sự ở tháng đang xem (đền bù ngày phép, chuyến du lịch không đi được...). Khoản riêng, có lý do, ghi nhật ký;
+ * cộng vào Tổng công của tháng đó, KHÔNG giới hạn trần, chỉ nhân với lương base. Không đi qua sửa công.
+ */
+export async function addBonusAction(_prev: PayrollActionState, fd: FormData): Promise<PayrollActionState> {
+  const admin = await requireRole("ADMIN");
+  const { month, employeeId } = parse(fd);
+  if (!isValidMonth(month) || !employeeId) return { error: "Dữ liệu không hợp lệ" };
+  const tooOld = await staleMonthError(month);
+  if (tooOld) return { error: tooOld };
+  const units = Number(String(fd.get("units") ?? "").trim().replace(",", "."));
+  const note = String(fd.get("note") ?? "");
+
+  const result = await addWorkBonus({ employeeId, month, units, note, adminId: admin.id });
+  if (!result.ok) return { error: result.error };
+  const e = await prisma.employee.findUnique({ where: { id: employeeId }, select: { code: true, name: true } });
+  await logAudit({ actorId: admin.id, action: "payroll.bonus_add", targetType: "Employee", targetId: employeeId, summary: `Thêm công bù ${Math.round(units * 100) / 100} công tháng ${month} cho ${e?.code} - ${e?.name}: ${note.trim()}` });
+  refresh();
+  return { ok: true, message: result.message };
+}
+
+export async function deleteBonusAction(_prev: PayrollActionState, fd: FormData): Promise<PayrollActionState> {
+  const admin = await requireRole("ADMIN");
+  const id = String(fd.get("id") ?? "");
+  const result = await deleteWorkBonus(id);
+  if (!result.ok) return { error: result.error };
+  await logAudit({ actorId: admin.id, action: "payroll.bonus_delete", targetType: "Employee", targetId: result.employeeId, summary: `Xóa công bù ${result.units} công tháng ${result.month}` });
+  refresh();
+  return { ok: true, message: result.message };
 }
 
 /**

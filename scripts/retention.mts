@@ -17,6 +17,7 @@ try {
   const { result, cutoffs } = await runRetention(prisma, { dryRun });
   console.log(dryRun ? "[CHẠY THỬ — chưa xóa gì]" : "[ĐÃ XÓA]");
   console.log(`Phiếu lương trước tháng ${cutoffs.payslipMonth}: ${result.payslips}`);
+  console.log(`Công bù trước tháng ${cutoffs.payslipMonth}: ${result.unitBonuses}`);
   console.log(`Log Hanet trước ${cutoffs.attendanceMonth}-01: ${result.attendanceLogs}`);
   console.log(`Bảng công ngày trước ${cutoffs.attendanceMonth}-01: ${result.dailyAttendance}`);
   console.log(`Hệ số phân bổ trước tháng ${cutoffs.allocationMonth}: ${result.allocations}`);

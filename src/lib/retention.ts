@@ -50,7 +50,7 @@ export function reportMonthAvailability(month: string, config: RetentionConfig, 
   };
 }
 
-export type RetentionResult = Record<"payslips" | "attendanceLogs" | "dailyAttendance" | "allocations" | "requests", number>;
+export type RetentionResult = Record<"payslips" | "unitBonuses" | "attendanceLogs" | "dailyAttendance" | "allocations" | "requests", number>;
 
 /**
  * Xóa dữ liệu quá hạn. dryRun = chỉ đếm, không xóa.
@@ -64,6 +64,7 @@ export async function runRetention(prisma: PrismaClient, options: { dryRun?: boo
 
   const where = {
     payslips: { month: { lt: cut.payslipMonth } },
+    unitBonuses: { month: { lt: cut.payslipMonth } }, // Công bù đi cùng phiếu lương
     attendanceLogs: { time: { lt: cut.attendanceTime } },
     dailyAttendance: { date: { lt: cut.attendanceDate } },
     allocations: { month: { lt: cut.allocationMonth } },
@@ -77,6 +78,7 @@ export async function runRetention(prisma: PrismaClient, options: { dryRun?: boo
   const run = async (count: () => Promise<number>, del: () => Promise<{ count: number }>) => (options.dryRun ? count() : (await del()).count);
   const result: RetentionResult = {
     payslips: await run(() => prisma.payslip.count({ where: where.payslips }), () => prisma.payslip.deleteMany({ where: where.payslips })),
+    unitBonuses: await run(() => prisma.workUnitBonus.count({ where: where.unitBonuses }), () => prisma.workUnitBonus.deleteMany({ where: where.unitBonuses })),
     attendanceLogs: await run(() => prisma.attendanceLog.count({ where: where.attendanceLogs }), () => prisma.attendanceLog.deleteMany({ where: where.attendanceLogs })),
     dailyAttendance: await run(() => prisma.dailyAttendance.count({ where: where.dailyAttendance }), () => prisma.dailyAttendance.deleteMany({ where: where.dailyAttendance })),
     allocations: await run(() => prisma.projectAllocation.count({ where: where.allocations }), () => prisma.projectAllocation.deleteMany({ where: where.allocations })),
@@ -89,7 +91,7 @@ export async function runRetention(prisma: PrismaClient, options: { dryRun?: boo
       data: {
         actorId: null,
         action: "retention.run",
-        summary: `Xóa dữ liệu quá hạn: ${result.payslips} phiếu lương, ${result.attendanceLogs} log Hanet, ${result.dailyAttendance} dòng công, ${result.allocations} hệ số phân bổ, ${result.requests} đơn từ`,
+        summary: `Xóa dữ liệu quá hạn: ${result.payslips} phiếu lương, ${result.unitBonuses} khoản công bù, ${result.attendanceLogs} log Hanet, ${result.dailyAttendance} dòng công, ${result.allocations} hệ số phân bổ, ${result.requests} đơn từ`,
       },
     });
   }

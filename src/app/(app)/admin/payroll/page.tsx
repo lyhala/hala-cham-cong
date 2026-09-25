@@ -11,6 +11,7 @@ import { ActionButton } from "../employees/_components/ActionButton";
 import { SheetUrlForm } from "./_components/SheetUrlForm";
 import { calculatePayroll, exportPayrollSheet, sendPayroll, syncPayrollSheet, toggleLeavePayout } from "./actions";
 import { annualLeaveBalances } from "@/lib/requests-db";
+import { BonusCell } from "./_components/BonusCell";
 
 export default async function Page(props: PageProps<"/admin/payroll">) {
   await requireRole("ADMIN");
@@ -30,6 +31,10 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
   const year = Number(month.slice(0, 4));
   const leaveOf = payslips.length ? await annualLeaveBalances(payslips.map((p) => p.employeeId), year, Number(month.slice(5)), { excludePayoutMonth: month }) : new Map();
   const isDecember = month.endsWith("-12");
+  // Công bù Admin đã nhập riêng cho tháng này (theo nhân sự)
+  const bonusRows = await prisma.workUnitBonus.findMany({ where: { month }, orderBy: { createdAt: "asc" }, include: { createdBy: { select: { name: true } } } });
+  const bonusesOf = new Map<string, typeof bonusRows>();
+  for (const b of bonusRows) bonusesOf.set(b.employeeId, [...(bonusesOf.get(b.employeeId) ?? []), b]);
   const { payrollSheetUrl } = await getSetting("googleSheets");
   const accountEmail = serviceAccountEmail();
 
@@ -52,7 +57,7 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
         </div>
       )}
       <div className="info-box">
-        Lương lấy <b>OT, nghỉ phép, nghỉ không lương, WFH, tạm ứng</b> từ các đơn ĐÃ DUYỆT. Sau khi duyệt / xóa đơn, bấm “Tính lại” để cập nhật lương. Hệ số performance = 0 với người chưa có điểm.
+        Lương lấy <b>OT, nghỉ phép, nghỉ không lương, WFH, tạm ứng</b> từ các đơn ĐÃ DUYỆT. Cột <b>Công bù</b> là khoản đền bù nhập riêng ở đây (bấm “＋ Bù”), không đi qua sửa công. Sau khi duyệt / xóa đơn, bấm “Tính lại” để cập nhật lương. Hệ số performance = 0 với người chưa có điểm.
       </div>
 
       <div className="toolbar">
@@ -150,7 +155,9 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
                   <td className="right">{p.parkingAllowance ? fmtMoney(p.parkingAllowance) : "—"}</td>
                   <td className="right">{p.latePenalty ? fmtMoney(p.latePenalty) : "—"}</td>
                   <td className="right">{p.advanceDeduction ? fmtMoney(p.advanceDeduction) : "—"}</td>
-                  <td className="right">{p.bonusUnits || "—"}</td>
+                  <td className="right">
+                    <BonusCell employeeId={p.employeeId} month={month} entries={bonusesOf.get(p.employeeId) ?? []} />
+                  </td>
                   <td className="right" title={p.leaveDaysPaidOut ? `${p.leaveDaysPaidOut} ngày phép tồn` : undefined}>{p.leavePayout ? fmtMoney(p.leavePayout) : "—"}</td>
                   <td className="right"><b>{fmtMoney(p.netPay)}</b></td>
                   <td className="right">{p.bhxhEmployee != null ? fmtMoney(p.bhxhEmployee) : "—"}</td>
