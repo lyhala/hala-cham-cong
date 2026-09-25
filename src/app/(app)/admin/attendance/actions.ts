@@ -49,7 +49,8 @@ export async function saveAttendanceDay(_prev: AttendanceActionState, fd: FormDa
   const calc = await calcForDay(employeeId, day, checkIn, checkOut);
   if (parsed.data.workUnits) {
     const units = Number(parsed.data.workUnits.replace(",", "."));
-    if (!Number.isFinite(units) || units < 0 || units > 1) return { error: "Số công phải từ 0 đến 1" };
+    // Trên 1 công là BÙ CÔNG (VD làm bù ngày nghỉ) — cho phép tối đa 3 công / ngày để khỏi phải sửa nhiều lần
+    if (!Number.isFinite(units) || units < 0 || units > 3) return { error: "Số công phải từ 0 đến 3 (trên 1 công là bù công)" };
     calc.workUnits = Math.round(units * 100) / 100;
   }
 

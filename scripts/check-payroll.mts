@@ -17,6 +17,7 @@ const base: PayrollInput = {
   perfSalary: 5_000_000,
   perfCoefficient: 0.8,
   attendanceUnits: 21.5,
+  bonusUnits: 0,
   annualLeaveDays: 0,
   otherPaidLeaveDays: 0,
   unpaidLeaveDays: 0,
@@ -65,6 +66,14 @@ check("Thiếu 1 tiêu chí tính 0 điểm", calcPerfCoefficient([{ weight: 50,
 
 // Tháng chưa có ngày công (lịch trống) không chia cho 0
 check("Ngày công tháng = 0 → không lỗi", calcPayslip({ ...base, standardDays: 0 }, params).salaryByUnits, 0);
+
+// ── Công bù (Admin sửa công trên 1) tính thêm NGOÀI trần ngày công tháng ──
+const bonus = calcPayslip({ ...base, attendanceUnits: 22, bonusUnits: 1 }, params);
+check("Đủ 22 công + bù 1 → công thực 23 (không bị chặn ở 22)", bonus.actualWorkUnits, 23);
+check("Lương theo công cả công bù = 10tr × 23 ÷ 22", bonus.salaryByUnits, Math.round((10_000_000 * 23) / 22));
+check("Công bù bù vào chỗ thiếu: chấm công 21 + bù 1 = 22", calcPayslip({ ...base, attendanceUnits: 21, bonusUnits: 1 }, params).actualWorkUnits, 22);
+check("Chấm công vượt trần vẫn bị chặn ở 22 (chỉ công bù mới vượt)", calcPayslip({ ...base, attendanceUnits: 23, bonusUnits: 0 }, params).actualWorkUnits, 22);
+check("Hỗ trợ cơm tính theo cả công bù", bonus.mealAllowance, Math.round((1_250_000 / 22) * 23));
 
 // ── Bảng lương ↔ Google Sheet (§14.1) ──
 import { HEADER, LAST_COLUMN, buildSheetValues, calcTotalCost, columnLetter, parseMoneyCell, parseSheetValues, spreadsheetIdFromUrl, type SheetPayslipRow } from "../src/lib/payroll-sheet";

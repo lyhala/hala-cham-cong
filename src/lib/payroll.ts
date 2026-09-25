@@ -12,7 +12,8 @@ export type PayrollInput = {
   baseSalary: number; // Lương base đang hiệu lực trong tháng
   perfSalary: number; // Lương performance đang hiệu lực trong tháng
   perfCoefficient: number; // Hệ số performance (0–1)
-  attendanceUnits: number; // Tổng công từ bảng chấm công (đã tính thiếu giờ, trừ ½ công đi muộn sau 10h...)
+  attendanceUnits: number; // Tổng công từ bảng chấm công (đã tính thiếu giờ, trừ ½ công đi muộn sau 10h...), KHÔNG gồm công bù
+  bonusUnits: number; // Công BÙ do Admin sửa tay vượt công của ngày — cộng thêm ngoài trần ngày công tháng
   annualLeaveDays: number; // Nghỉ phép năm: hưởng lương → tính vào công thực
   otherPaidLeaveDays: number; // Nghỉ kết hôn / tang lễ: hưởng nguyên lương → tính vào công thực
   unpaidLeaveDays: number; // Nghỉ không lương: chỉ để hiển thị (đã không có trong công chấm)
@@ -54,7 +55,8 @@ export type PayrollResult = {
  */
 export function calcPayslip(input: PayrollInput, params: SalaryParams): PayrollResult {
   const std = input.standardDays;
-  const actual = round2(Math.min(std, input.attendanceUnits + input.annualLeaveDays + input.otherPaidLeaveDays));
+  // Công thực bị chặn trần ở ngày công tháng (tránh tính trùng phép + chấm công), công bù được cộng thêm ngoài trần
+  const actual = round2(Math.min(std, input.attendanceUnits + input.annualLeaveDays + input.otherPaidLeaveDays) + input.bonusUnits);
   const total = round2(actual + input.otUnits);
 
   const salaryByUnits = std > 0 ? Math.round((input.baseSalary * total) / std) : 0;

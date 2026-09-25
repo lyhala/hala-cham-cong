@@ -258,7 +258,8 @@ export async function getMonthAttendance(employeeId: string, month: string) {
 function summarizeDays(days: DayView[], standardDays: number) {
   return {
     standardDays,
-    workUnits: Math.round(days.reduce((s, d) => s + Math.min(d.dayUnit || 1, d.workUnits + d.paidUnits), 0) * 100) / 100,
+    // Ngày Admin sửa tay được tính đúng số công đã nhập (kể cả trên 1 = bù công); các ngày còn lại tối đa đủ công của ngày
+    workUnits: Math.round(days.reduce((s, d) => s + (d.isManual ? d.workUnits + d.paidUnits : Math.min(d.dayUnit || 1, d.workUnits + d.paidUnits)), 0) * 100) / 100,
     lateDays: days.filter((d) => d.lateMinutes > 0).length,
     lateMinutes: days.reduce((s, d) => s + d.lateMinutes, 0),
     // Tiền phạt sau khi trừ các ngày được miễn (§3.3)
@@ -289,7 +290,7 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
     }),
     prisma.dailyAttendance.findMany({
       where: { date: { gte, lt } },
-      select: { employeeId: true, date: true, workUnits: true, lateMinutes: true, latePenalty: true },
+      select: { employeeId: true, date: true, workUnits: true, lateMinutes: true, latePenalty: true, isManual: true },
     }),
     prisma.request.findMany({
       where: { type: "LATE", status: "APPROVED", deletedAt: null, dateFrom: { gte, lt } },
@@ -303,6 +304,7 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
     if (r.dateFrom) requestDays.set(r.employeeId, [...(requestDays.get(r.employeeId) ?? []), r.dateFrom.toISOString().slice(0, 10)]);
   }
   const today = todayVN();
+  const unitByDay = new Map(calendar.days.map((d) => [d.day, d.unit]));
   const elapsedWorkdays = Math.round(calendar.days.filter((d) => d.workday && d.day <= today).reduce((s, d) => s + d.unit, 0) * 100) / 100; // tổng công của các ngày làm đã qua
 
   return {
@@ -318,6 +320,8 @@ export async function getMonthSummaries(month: string, options: { forPayroll?: b
         exempt: e.attendanceExempt,
         parkingOutside: e.parkingOutside,
         leftAt: e.leftAt,
+        // Công BÙ: phần Admin sửa tay vượt công của ngày (VD nhập 2 công cho ngày 1 công → bù 1). Tính thêm NGOÀI trần ngày công tháng của lương
+        bonusUnits: Math.round(mine.filter((r) => r.isManual).reduce((s, r) => s + Math.max(0, r.workUnits - (unitByDay.get(r.date.toISOString().slice(0, 10)) ?? 0)), 0) * 100) / 100,
         workUnits: e.attendanceExempt ? elapsedWorkdays : Math.round(mine.reduce((s, r) => s + r.workUnits, 0) * 100) / 100,
         lateDays: mine.filter((r) => r.lateMinutes > 0).length,
         latePenalty: mine.reduce((s, r) => (excused.has(r.date.toISOString().slice(0, 10)) ? s : s + r.latePenalty), 0),
