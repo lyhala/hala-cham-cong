@@ -1,10 +1,12 @@
 import "server-only";
 
 import type { Prisma } from "@/generated/prisma/client";
-import { getMonthSummaries } from "@/lib/attendance";
+import { getMonthSummaries, loadMonthCalendar } from "@/lib/attendance";
 import { prisma } from "@/lib/db";
-import { calcPayslip, calcPerfCoefficient, type PayrollResult } from "@/lib/payroll";
+import { calcOtUnits, calcPayslip, calcPerfCoefficient, type PayrollResult, type SalaryParams } from "@/lib/payroll";
 import { calcTotalCost } from "@/lib/payroll-sheet";
+import { shiftMonth } from "@/lib/dates";
+import { hoursBetween, leaveUnitsInMonth, otDayKind } from "@/lib/requests";
 import { getSetting } from "@/lib/settings-db";
 
 // Cột số liệu của phiếu lương — dùng cho cả bản tính (Payslip) lẫn bản đã gửi cho nhân sự (publishedData).
@@ -36,18 +38,20 @@ export type CalcSummary = { calculated: number; missingSalary: { code: string; n
  * Tính (hoặc tính lại) phiếu lương của 1 tháng "YYYY-MM" cho mọi nhân sự (hoặc 1 người nếu có employeeId).
  * Dữ liệu vào: bảng chấm công + phạt đi muộn, lương base/performance đang hiệu lực (lấy mốc hiệu lực mới nhất
  * tính đến NGÀY CUỐI THÁNG), hệ số performance từ điểm đã sync.
- * Đơn từ (OT, nghỉ phép/không lương, tạm ứng) chưa có module → tạm để 0; nối vào ở `leaveAndAdjustments`.
+ * Đơn từ đã duyệt (OT, nghỉ phép/không lương, WFH, tạm ứng) được lấy ở `requestAdjustments`.
  * Nhân sự chưa có mốc lương thì bỏ qua và trả về trong missingSalary (không tạo phiếu 0đ).
  * Giữ nguyên trạng thái Đã gửi / bản đã gửi; chỉ cập nhật số liệu mới.
  */
 export async function calculateMonth(month: string, employeeId?: string): Promise<CalcSummary> {
-  const [summaries, params, criteria] = await Promise.all([
+  const [summaries, params, criteria, calendar] = await Promise.all([
     getMonthSummaries(month, { forPayroll: true }),
     getSetting("salaryParams"),
     prisma.performanceCriterion.findMany({ select: { id: true, weight: true } }),
+    loadMonthCalendar(month),
   ]);
   const people = summaries.rows.filter((r) => !employeeId || r.id === employeeId);
   const ids = people.map((p) => p.id);
+  const adjustments = await requestAdjustments(month, ids, calendar, params);
 
   const [history, scores] = await Promise.all([
     prisma.salaryHistory.findMany({
@@ -81,7 +85,7 @@ export async function calculateMonth(month: string, employeeId?: string): Promis
         attendanceUnits: p.workUnits,
         parkingOutside: p.parkingOutside,
         latePenalty: p.latePenalty,
-        ...leaveAndAdjustments(),
+        ...(adjustments.get(p.id) ?? NO_ADJUSTMENTS),
       },
       params,
     );
@@ -97,9 +101,61 @@ export async function calculateMonth(month: string, employeeId?: string): Promis
   return { calculated, missingSalary };
 }
 
-/** Nghỉ phép / nghỉ không lương / OT / tạm ứng của tháng. TODO: lấy từ Đơn từ đã duyệt khi module Đơn từ xong. */
-function leaveAndAdjustments() {
-  return { annualLeaveDays: 0, otherPaidLeaveDays: 0, unpaidLeaveDays: 0, otHours: 0, otUnits: 0, advanceDeduction: 0 };
+const NO_ADJUSTMENTS = { annualLeaveDays: 0, otherPaidLeaveDays: 0, unpaidLeaveDays: 0, otHours: 0, otUnits: 0, advanceDeduction: 0 };
+
+/**
+ * Lấy từ Đơn từ ĐÃ DUYỆT (chưa xóa) của tháng:
+ *  - Nghỉ phép → annualLeaveDays; nghỉ kết hôn / tang lễ / WFH → otherPaidLeaveDays (tính vào công thực, hưởng nguyên lương)
+ *  - Nghỉ không lương → unpaidLeaveDays (chỉ hiển thị — ngày đó không có công nên tự bị trừ)
+ *  - OT → giờ OT theo loại ngày (thường / cuối tuần / lễ) rồi ra công OT nhân hệ số
+ *  - Tạm ứng → trừ hết vào lương tháng của ngày tạo đơn (giờ VN)
+ * Đơn nghỉ chỉ đếm ngày làm việc trong tháng đó; đơn nghỉ qua tháng thì mỗi tháng tính phần của mình.
+ */
+async function requestAdjustments(month: string, employeeIds: string[], calendar: Awaited<ReturnType<typeof loadMonthCalendar>>, params: SalaryParams) {
+  const [y, m] = month.split("-").map(Number);
+  const start = new Date(Date.UTC(y, m - 1, 1));
+  const end = new Date(Date.UTC(y, m, 1));
+  const requests = await prisma.request.findMany({
+    where: {
+      employeeId: { in: employeeIds },
+      status: "APPROVED",
+      deletedAt: null,
+      OR: [
+        { type: "SALARY_ADVANCE", createdAt: { gte: new Date(`${month}-01T00:00:00+07:00`), lt: new Date(`${shiftMonth(month, 1)}-01T00:00:00+07:00`) } },
+        { type: { in: ["OT", "LEAVE", "WFH"] }, dateFrom: { lt: end }, dateTo: { gte: start } },
+      ],
+    },
+  });
+
+  const dayInfo = new Map(calendar.days.map((d) => [d.day, d]));
+  const workday = (day: string) => dayInfo.get(day)?.workday ?? false;
+  const result = new Map<string, typeof NO_ADJUSTMENTS>();
+  const ot = new Map<string, { weekday: number; weekend: number; holiday: number }>();
+  const get = (id: string) => result.get(id) ?? result.set(id, { ...NO_ADJUSTMENTS }).get(id)!;
+
+  for (const r of requests) {
+    const adj = get(r.employeeId);
+    const from = r.dateFrom?.toISOString().slice(0, 10);
+    const to = r.dateTo?.toISOString().slice(0, 10);
+    if (r.type === "SALARY_ADVANCE") {
+      adj.advanceDeduction += r.amount ?? 0;
+    } else if (r.type === "OT" && from?.startsWith(month) && r.timeFrom && r.timeTo) {
+      const hours = ot.get(r.employeeId) ?? { weekday: 0, weekend: 0, holiday: 0 };
+      hours[otDayKind({ isHoliday: dayInfo.get(from)?.isHoliday ?? false, workday: workday(from) })] += hoursBetween(r.timeFrom, r.timeTo);
+      ot.set(r.employeeId, hours);
+    } else if ((r.type === "LEAVE" || r.type === "WFH") && from && to) {
+      const units = leaveUnitsInMonth({ dateFrom: from, dateTo: to, dayPortion: r.dayPortion }, month, workday);
+      if (r.type === "WFH" || r.leaveSubtype === "MARRIAGE" || r.leaveSubtype === "FUNERAL") adj.otherPaidLeaveDays += units;
+      else if (r.leaveSubtype === "UNPAID") adj.unpaidLeaveDays += units;
+      else adj.annualLeaveDays += units;
+    }
+  }
+  for (const [id, hours] of ot) {
+    const adj = get(id);
+    adj.otHours = Math.round((hours.weekday + hours.weekend + hours.holiday) * 100) / 100;
+    adj.otUnits = calcOtUnits(hours, params);
+  }
+  return result;
 }
 
 /**

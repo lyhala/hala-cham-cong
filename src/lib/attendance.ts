@@ -3,7 +3,10 @@ import "server-only";
 import { prisma } from "@/lib/db";
 import { todayVN } from "@/lib/dates";
 import { calcDay, isWorkday, pickExemptDays } from "@/lib/attendance-rules";
+import { daysInRange, LEAVE_LABEL } from "@/lib/requests";
 import { getSetting } from "@/lib/settings-db";
+
+const dayOf = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Khoảng [00:00, 24:00) theo giờ VN của 1 ngày "YYYY-MM-DD", dạng mốc UTC. */
 function vnDayRange(day: string) {
@@ -122,7 +125,7 @@ const monthRange = (month: string) => {
 };
 
 /** Lịch làm việc của tháng: mỗi ngày có phải ngày làm không (T2–T6 + ngày ngoại lệ trong WorkCalendarDay). */
-async function loadMonthCalendar(month: string) {
+export async function loadMonthCalendar(month: string) {
   const { gte, lt, lastDay } = monthRange(month);
   const [schedule, overrides] = await Promise.all([
     getSetting("workSchedule"),
@@ -154,18 +157,37 @@ export type DayView = {
   lateExcused: boolean; // Có đơn đi muộn được miễn → tiền phạt không bị trừ
   isManual: boolean;
   note: string | null;
+  paidUnits: number; // Công từ đơn nghỉ phép / nghỉ hưởng lương / WFH đã duyệt (cộng với công chấm, tối đa 1 công/ngày)
+  leaveLabel: string | null; // VD "Nghỉ phép", "WFH", "Nghỉ không lương"
   status: DayStatus;
 };
 
 /** Bảng công 1 tháng của 1 nhân sự (mọi ngày trong tháng) + tổng hợp. */
 export async function getMonthAttendance(employeeId: string, month: string) {
   const { gte, lt } = monthRange(month);
-  const [calendar, rows, excused, employee] = await Promise.all([
+  const [calendar, rows, excused, employee, leaves] = await Promise.all([
     loadMonthCalendar(month),
     prisma.dailyAttendance.findMany({ where: { employeeId, date: { gte, lt } } }),
     lateExcusedDays(employeeId, month),
     prisma.employee.findUnique({ where: { id: employeeId }, select: { attendanceExempt: true } }),
+    // Đơn nghỉ / WFH đã duyệt chồng lên tháng này
+    prisma.request.findMany({
+      where: { employeeId, status: "APPROVED", deletedAt: null, type: { in: ["LEAVE", "WFH"] }, dateFrom: { lt }, dateTo: { gte } },
+      select: { type: true, leaveSubtype: true, dateFrom: true, dateTo: true, dayPortion: true },
+    }),
   ]);
+  const leaveByDay = new Map<string, { paidUnits: number; label: string }>();
+  for (const l of leaves) {
+    if (!l.dateFrom || !l.dateTo) continue;
+    const perDay = !l.dayPortion || l.dayPortion === "FULL" ? 1 : 0.5;
+    const paid = l.type === "WFH" || l.leaveSubtype !== "UNPAID";
+    const label = l.type === "WFH" ? "WFH" : LEAVE_LABEL[l.leaveSubtype ?? "ANNUAL"];
+    for (const d of daysInRange(dayOf(l.dateFrom), dayOf(l.dateTo))) {
+      if (!d.startsWith(month)) continue;
+      const cur = leaveByDay.get(d);
+      leaveByDay.set(d, { paidUnits: Math.min(1, (cur?.paidUnits ?? 0) + (paid ? perDay : 0)), label: cur ? `${cur.label}, ${label}` : label });
+    }
+  }
   const exempt = employee?.attendanceExempt ?? false;
   const byDay = new Map(rows.map((r) => [r.date.toISOString().slice(0, 10), r]));
   const today = todayVN();
@@ -175,11 +197,13 @@ export async function getMonthAttendance(employeeId: string, month: string) {
     const lateExcused = excused.has(c.day);
     // Miễn chấm công: mọi ngày làm việc (đã tới) tự đủ 1 công, bỏ qua dữ liệu Hanet
     const workUnits = c.workday && exempt && c.day <= today ? 1 : (r?.workUnits ?? 0);
+    const leave = c.workday ? leaveByDay.get(c.day) : undefined;
+    const paidUnits = leave?.paidUnits ?? 0;
     let status: DayStatus;
     if (!c.workday) status = "off";
     else if (c.day > today) status = "future";
     else if (exempt) status = "ok";
-    else if (workUnits >= 1) status = "ok"; // Chỉ xét số công: đủ 1 công (kể cả Admin sửa tay) là xanh
+    else if (workUnits + paidUnits >= 1) status = "ok"; // Chỉ xét số công: đủ 1 công (gồm nghỉ phép/WFH đã duyệt, hoặc Admin sửa tay) là xanh
     else status = "issue";
     return {
       day: c.day,
@@ -195,6 +219,8 @@ export async function getMonthAttendance(employeeId: string, month: string) {
       lateExcused,
       isManual: r?.isManual ?? false,
       note: r?.note ?? null,
+      paidUnits,
+      leaveLabel: leave?.label ?? null,
       status,
     };
   });
@@ -205,7 +231,7 @@ export async function getMonthAttendance(employeeId: string, month: string) {
 function summarizeDays(days: DayView[], standardDays: number) {
   return {
     standardDays,
-    workUnits: Math.round(days.reduce((s, d) => s + d.workUnits, 0) * 100) / 100,
+    workUnits: Math.round(days.reduce((s, d) => s + Math.min(1, d.workUnits + d.paidUnits), 0) * 100) / 100,
     lateDays: days.filter((d) => d.lateMinutes > 0).length,
     lateMinutes: days.reduce((s, d) => s + d.lateMinutes, 0),
     // Tiền phạt sau khi trừ các ngày được miễn (§3.3)

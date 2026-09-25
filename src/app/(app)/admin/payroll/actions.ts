@@ -9,6 +9,7 @@ import { SheetsError } from "@/lib/google-sheets";
 import { calculateMonth, sendPayslips } from "@/lib/payroll-db";
 import { exportPayrollToSheet, syncPayrollFromSheet } from "@/lib/payroll-sheet-db";
 import { spreadsheetIdFromUrl } from "@/lib/payroll-sheet";
+import { retentionCutoffs } from "@/lib/retention";
 import { getSetting } from "@/lib/settings-db";
 
 // Server action là API công khai: luôn requireRole("ADMIN") trước tiên.
@@ -31,6 +32,11 @@ export async function calculatePayroll(_prev: PayrollActionState, fd: FormData):
   const admin = await requireRole("ADMIN");
   const { month, employeeId } = parse(fd);
   if (!isValidMonth(month)) return { error: "Tháng không hợp lệ" };
+
+  // Chấm công và đơn từ chỉ giữ vài tháng (§17) — tháng cũ hơn không còn dữ liệu nguồn, tính lại sẽ ra kết quả sai
+  const cut = retentionCutoffs(await getSetting("retention"));
+  const oldest = cut.attendanceMonth > cut.requestMonth ? cut.attendanceMonth : cut.requestMonth;
+  if (month < oldest) return { error: `Dữ liệu chấm công / đơn từ tháng ${month} đã bị xóa theo chính sách lưu trữ nên không tính lại được (chỉ tính lại từ tháng ${oldest}). Phiếu đã tính được giữ nguyên.` };
 
   const result = await calculateMonth(month, employeeId);
   const who = employeeId ? (await prisma.employee.findUnique({ where: { id: employeeId }, select: { code: true } }))?.code ?? employeeId : "toàn công ty";

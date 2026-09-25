@@ -84,11 +84,12 @@ export function DayDetail({ day, children }: { day: DayView; children?: React.Re
           <span className={`badge ${STATUS_BADGE[day.status]} xs`}>{statusLabel(day)}</span>
         </div>
       </div>
+      {day.leaveLabel && <div className="info-box" style={{ marginBottom: 8 }}>Đơn đã duyệt: {day.leaveLabel}{day.paidUnits > 0 ? ` (+${day.paidUnits} công)` : " (không tính công)"}</div>}
       {day.calendarNote && <div style={{ fontSize: 12, color: "var(--text-2)", marginBottom: 6 }}>{day.calendarNote}</div>}
       <div className="grid3">
         <div><div className="stat-label">Check-in</div><b>{day.checkIn ? timeVN(day.checkIn) : "—"}</b></div>
         <div><div className="stat-label">Check-out</div><b>{day.checkOut ? timeVN(day.checkOut) : day.checkIn ? "Chưa về" : "—"}</b></div>
-        <div><div className="stat-label">Số công</div><b>{day.workUnits}</b></div>
+        <div><div className="stat-label">Số công</div><b>{Math.min(1, day.workUnits + day.paidUnits)}</b></div>
         <div><div className="stat-label">Đi muộn</div><b>{day.lateMinutes > 0 ? `${day.lateMinutes} phút` : "—"}</b></div>
         <div>
           <div className="stat-label">Tiền phạt</div>

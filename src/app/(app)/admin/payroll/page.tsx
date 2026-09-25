@@ -47,7 +47,7 @@ export default async function Page(props: PageProps<"/admin/payroll">) {
         </div>
       )}
       <div className="info-box">
-        Đơn từ chưa nối vào lương: <b>OT, nghỉ phép, nghỉ không lương, tạm ứng</b> đang tính bằng 0. Hệ số performance = 0 với người chưa có điểm.
+        Lương lấy <b>OT, nghỉ phép, nghỉ không lương, WFH, tạm ứng</b> từ các đơn ĐÃ DUYỆT. Sau khi duyệt / xóa đơn, bấm “Tính lại” để cập nhật lương. Hệ số performance = 0 với người chưa có điểm.
       </div>
 
       <div className="toolbar">
